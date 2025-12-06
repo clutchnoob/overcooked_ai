@@ -9,7 +9,11 @@
 source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
 conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 
-mkdir -p logs
+# Navigate to project directory
+cd "$(dirname "$0")/.."
+cd src/human_aware_rl
+
+mkdir -p ../../hpc_scripts/logs
 
 python -m human_aware_rl.imitation.train_bc_models --layout coordination_ring
 
