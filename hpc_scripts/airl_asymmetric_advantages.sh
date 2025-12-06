@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -n 16
-#SBATCH -t 12:00:00
-#SBATCH --mem=32G
+#SBATCH -t 01:00:00
+#SBATCH --mem=16G
 #SBATCH --job-name=airl_asymm
 #SBATCH --output=logs/airl_asymmetric_advantages_%j.out
 #SBATCH --error=logs/airl_asymmetric_advantages_%j.err
