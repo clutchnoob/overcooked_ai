@@ -1,0 +1,40 @@
+# Overcooked AI Requirements (GPU/CUDA)
+# For RunPod or other GPU clusters
+# Install with: pip install -r requirements-gpu.txt
+
+# Core dependencies
+dill
+gymnasium
+ipywidgets
+numpy<2
+opencv-python
+pandas
+pygame
+scipy
+setuptools>=77.0.3
+tqdm
+
+# PyTorch with CUDA (auto-detects GPU)
+torch>=2.0
+tensorboard>=2.14
+
+# JAX with CUDA support
+--find-links https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+jax[cuda12_pip]>=0.4
+flax>=0.8
+optax>=0.2
+
+# Experiment tracking (optional)
+wandb
+sacred
+
+# Visualization
+matplotlib
+seaborn
+
+# Jupyter support
+ipykernel
+
+# Image processing for GIFs
+Pillow
+
