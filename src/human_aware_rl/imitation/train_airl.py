@@ -100,13 +100,16 @@ DEFAULT_AIRL_PARAMS = {
 }
 
 
-# Fast training parameters
+# Fast training parameters (~15-30 min per layout)
 FAST_AIRL_PARAMS = {
     **DEFAULT_AIRL_PARAMS,
-    "total_timesteps": 500_000,  # 500K timesteps
-    "steps_per_iter": 5000,
-    "early_stop_patience": 30,
-    "sample_buffer_size": 10,
+    "total_timesteps": 100_000,  # 100K timesteps (much faster)
+    "steps_per_iter": 2000,  # Smaller iterations for quicker updates
+    "early_stop_patience": 15,  # Aggressive early stopping
+    "sample_buffer_size": 5,  # Smaller buffer
+    "disc_updates_per_iter": 3,  # Fewer discriminator updates
+    "policy_epochs": 4,  # Fewer PPO epochs
+    "batch_size": 128,  # Smaller batch for faster iteration
 }
 
 
