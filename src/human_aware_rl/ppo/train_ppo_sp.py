@@ -143,7 +143,7 @@ def train_ppo_sp(
         log_interval=config_dict.get("log_interval", 1),
         save_interval=config_dict.get("save_interval", 50),
         eval_interval=config_dict.get("eval_interval", 25),
-        early_stop_patience=config_dict.get("early_stop_patience", 20),
+        early_stop_patience=config_dict.get("early_stop_patience", 100),
         verbose=verbose,
         results_dir=results_dir,
         experiment_name=config_dict["experiment_name"],
@@ -349,7 +349,7 @@ def main():
         local_overrides = {
             "total_timesteps": 1000000,  # 1M instead of 6.6M
             "num_workers": 32,
-            "early_stop_patience": 15,  # Stop early if converged
+            "early_stop_patience": 100,  # More patience for variance
             "save_interval": 25,
             "log_interval": 1,
         }

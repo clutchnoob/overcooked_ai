@@ -94,7 +94,7 @@ class PPOConfig:
     verbose: bool = True
     
     # Early stopping
-    early_stop_patience: int = 20  # Stop if no improvement for this many updates
+    early_stop_patience: int = 100  # Stop if no significant improvement for this many updates
     early_stop_min_reward: float = float('inf')  # Minimum reward threshold (disabled by default)
     
     # Output
@@ -534,18 +534,25 @@ class PPOTrainer:
             mean_reward = np.mean(recent_rewards) if recent_rewards else 0.0
             std_reward = np.std(recent_rewards) if len(recent_rewards) > 1 else 0.0
             
-            # Early stopping check
-            if recent_rewards and len(recent_rewards) >= 20:  # Need at least 20 episodes
+            # Early stopping check with tolerance for variance
+            # Only trigger if reward is significantly worse than best (not just slightly lower)
+            if recent_rewards and len(recent_rewards) >= 30:  # Need at least 30 episodes
+                # Use a tolerance of 1 std or 5% of best reward (whichever is larger)
+                tolerance = max(std_reward * 0.5, best_mean_reward * 0.05, 2.0)
+                
                 if mean_reward > best_mean_reward:
                     best_mean_reward = mean_reward
                     no_improvement_count = 0
+                elif mean_reward >= best_mean_reward - tolerance:
+                    # Within tolerance - don't count as "no improvement"
+                    no_improvement_count = max(0, no_improvement_count - 1)  # Slight recovery
                 else:
                     no_improvement_count += 1
                 
                 if no_improvement_count >= self.config.early_stop_patience:
                     if self.config.verbose:
-                        print(f"\nEarly stopping: No improvement for {self.config.early_stop_patience} updates")
-                        print(f"Best mean reward: {best_mean_reward:.2f}")
+                        print(f"\nEarly stopping: No significant improvement for {self.config.early_stop_patience} updates")
+                        print(f"Best mean reward: {best_mean_reward:.2f}, Current: {mean_reward:.2f}")
                     break
             
             # Logging

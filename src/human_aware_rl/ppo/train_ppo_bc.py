@@ -176,7 +176,7 @@ def train_ppo_bc(
         log_interval=config_dict.get("log_interval", 1),
         save_interval=config_dict.get("save_interval", 50),
         eval_interval=config_dict.get("eval_interval", 25),
-        early_stop_patience=config_dict.get("early_stop_patience", 20),
+        early_stop_patience=config_dict.get("early_stop_patience", 100),
         bc_schedule=bc_schedule_tuples,
         bc_model_dir=bc_model_dir,
         verbose=verbose,
@@ -413,7 +413,7 @@ def main():
         local_overrides = {
             "total_timesteps": 1000000,  # 1M instead of paper's ~8M
             "num_workers": 32,
-            "early_stop_patience": 15,
+            "early_stop_patience": 100,
             "save_interval": 25,
             "log_interval": 1,
         }
