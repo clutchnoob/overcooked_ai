@@ -2,9 +2,9 @@
 #SBATCH -n 16
 #SBATCH -t 47:00:00
 #SBATCH --mem=32G
-#SBATCH --job-name=ppo_gail_forced
-#SBATCH --output=logs/ppo_gail_forced_%j.out
-#SBATCH --error=logs/ppo_gail_forced_%j.err
+#SBATCH --job-name=gail_counter
+#SBATCH --output=logs/gail_counter_%j.out
+#SBATCH --error=logs/gail_counter_%j.err
 
 source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
 conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
@@ -15,5 +15,4 @@ cd src
 
 mkdir -p "$SLURM_SUBMIT_DIR/logs"
 
-python -m human_aware_rl.ppo.train_ppo_gail --layout forced_coordination --seed 0 --fast
-
+python -m human_aware_rl.imitation.gail --layout counter_circuit
