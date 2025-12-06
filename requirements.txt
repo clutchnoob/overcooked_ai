@@ -5,7 +5,7 @@
 dill
 gymnasium
 ipywidgets
-numpy<2
+numpy
 opencv-python
 pandas
 pygame

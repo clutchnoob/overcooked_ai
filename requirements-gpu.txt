@@ -6,7 +6,7 @@
 dill
 gymnasium
 ipywidgets
-numpy<2
+numpy
 opencv-python
 pandas
 pygame
@@ -19,8 +19,10 @@ torch>=2.0
 tensorboard>=2.14
 
 # JAX with CUDA support
---find-links https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-jax[cuda12_pip]>=0.4
+# NOTE: Install JAX separately after other deps:
+#   pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# Or for CUDA 11:
+#   pip install --upgrade "jax[cuda11_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 flax>=0.8
 optax>=0.2
 
