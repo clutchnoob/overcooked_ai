@@ -17,7 +17,7 @@ The goal of the game is to deliver soups as fast as possible. Each soup requires
 
 You can **try out the game [here](https://humancompatibleai.github.io/overcooked-demo/)** (playing with some previously trained DRL agents). To play with your own trained agents using this interface, or to collect more human-AI or human-human data, you can use the code [here](https://github.com/HumanCompatibleAI/overcooked_ai/tree/master/src/overcooked_demo). You can find some human-human and human-AI gameplay data already collected [here](https://github.com/HumanCompatibleAI/overcooked_ai/tree/master/src/human_aware_rl/static/human_data).
 
-**NOTE + LOOKING FOR CONTRIBUTORS:** DRL and BC implementations are now deprecated. We used to include code for training BC and PPO agents in the `human_aware_rl` directory. See [this issue](https://github.com/HumanCompatibleAI/overcooked_ai/issues/162) for more details.
+**Training Agents:** The `human_aware_rl` directory contains code for training Behavior Cloning (BC) and PPO agents. See the [Behavior Cloning and Reinforcement Learning](#behavior-cloning-and-reinforcement-learning-) section below for details.
 
 This benchmark was build in the context of a 2019 paper: *[On the Utility of Learning about Humans for Human-AI Coordination](https://arxiv.org/abs/1910.05789)*. Also see our [blog post](https://bair.berkeley.edu/blog/2019/10/21/coordination/).
 
@@ -25,14 +25,14 @@ This benchmark was build in the context of a 2019 paper: *[On the Utility of Lea
 
 
 - Carroll, Micah, Rohin Shah, Mark K. Ho, Thomas L. Griffiths, Sanjit A. Seshia, Pieter Abbeel, and Anca Dragan. ["On the utility of learning about humans for human-ai coordination."](https://arxiv.org/abs/1910.05789) NeurIPS 2019.
-- Charakorn, Rujikorn, Poramate Manoonpong, and Nat Dilokthanakul. [“Investigating Partner Diversification Methods in Cooperative Multi-Agent Deep Reinforcement Learning.”](https://www.rujikorn.com/files/papers/diversity_ICONIP2020.pdf) Neural Information Processing. ICONIP 2020.
+- Charakorn, Rujikorn, Poramate Manoonpong, and Nat Dilokthanakul. ["Investigating Partner Diversification Methods in Cooperative Multi-Agent Deep Reinforcement Learning."](https://www.rujikorn.com/files/papers/diversity_ICONIP2020.pdf) Neural Information Processing. ICONIP 2020.
 - Knott, Paul, Micah Carroll, Sam Devlin, Kamil Ciosek, Katja Hofmann, Anca D. Dragan, and Rohin Shah. ["Evaluating the Robustness of Collaborative Agents."](https://arxiv.org/abs/2101.05507) AAMAS 2021.
 - Nalepka, Patrick, Jordan P. Gregory-Dunsmore, James Simpson, Gaurav Patil, and Michael J. Richardson. ["Interaction Flexibility in Artificial Agents Teaming with Humans."](https://www.researchgate.net/publication/351533529_Interaction_Flexibility_in_Artificial_Agents_Teaming_with_Humans) Cogsci 2021.
-- Fontaine, Matthew C., Ya-Chuan Hsu, Yulun Zhang, Bryon Tjanaka, and Stefanos Nikolaidis. [“On the Importance of Environments in Human-Robot Coordination”](http://arxiv.org/abs/2106.10853) RSS 2021.
+- Fontaine, Matthew C., Ya-Chuan Hsu, Yulun Zhang, Bryon Tjanaka, and Stefanos Nikolaidis. ["On the Importance of Environments in Human-Robot Coordination"](http://arxiv.org/abs/2106.10853) RSS 2021.
 - Zhao, Rui, Jinming Song, Hu Haifeng, Yang Gao, Yi Wu, Zhongqian Sun, Yang Wei. ["Maximum Entropy Population Based Training for Zero-Shot Human-AI Coordination"](https://arxiv.org/abs/2112.11701). NeurIPS Cooperative AI Workshop, 2021.
-- Sarkar, Bidipta, Aditi Talati, Andy Shih, and Dorsa Sadigh. [“PantheonRL: A MARL Library for Dynamic Training Interactions”](https://iliad.stanford.edu/pdfs/publications/sarkar2022pantheonrl.pdf). AAAI 2022.
+- Sarkar, Bidipta, Aditi Talati, Andy Shih, and Dorsa Sadigh. ["PantheonRL: A MARL Library for Dynamic Training Interactions"](https://iliad.stanford.edu/pdfs/publications/sarkar2022pantheonrl.pdf). AAAI 2022.
 - Ribeiro, João G., Cassandro Martinho, Alberto Sardinha, Francisco S. Melo. ["Assisting Unknown Teammates in Unknown Tasks: Ad Hoc Teamwork under Partial Observability"](https://arxiv.org/abs/2201.03538).
-- Xihuai Wang, Shao Zhang, Wenhao Zhang, Wentao Dong, Jingxiao Chen, Ying Wen and Weinan Zhang. NeurIPS 2024. [“ZSC-Eval: An Evaluation Toolkit and Benchmark for Multi-agent Zero-shot Coordination”](https://arxiv.org/abs/2310.05208v2).
+- Xihuai Wang, Shao Zhang, Wenhao Zhang, Wentao Dong, Jingxiao Chen, Ying Wen and Weinan Zhang. NeurIPS 2024. ["ZSC-Eval: An Evaluation Toolkit and Benchmark for Multi-agent Zero-shot Coordination"](https://arxiv.org/abs/2310.05208v2).
 
 
 ## Installation ☑️
@@ -104,41 +104,236 @@ See this [notebook](Overcooked%20Tutorial.ipynb) for a quick guide on getting st
 
 `up.sh`: Shell script to spin up the Docker server that hosts the game 
 
-`human_aware_rl` contains (NOTE: this is not supported anymore, see bottom of the README for more info):
-
-`ppo/`:
-- `ppo_rllib.py`: Primary module where code for training a PPO agent resides. This includes an rllib compatible wrapper on `OvercookedEnv`, utilities for converting rllib `Policy` classes to Overcooked `Agent`s, as well as utility functions and callbacks
-- `ppo_rllib_client.py` Driver code for configuing and launching the training of an agent. More details about usage below
-- `ppo_rllib_from_params_client.py`: train one agent with PPO in Overcooked with variable-MDPs 
-- `ppo_rllib_test.py` Reproducibility tests for local sanity checks
-- `run_experiments.sh` Script for training agents on 5 classical layouts
-- `trained_example/` Pretrained model for testing purposes
-
-`rllib/`:
-- `rllib.py`: rllib agent and training utils that utilize Overcooked APIs
-- `utils.py`: utils for the above
-- `tests.py`: preliminary tests for the above
+`human_aware_rl` contains:
 
 `imitation/`:
-- `behavior_cloning_tf2.py`:  Module for training, saving, and loading a BC model
-- `behavior_cloning_tf2_test.py`: Contains basic reproducibility tests as well as unit tests for the various components of the bc module.
+- `behavior_cloning.py`: PyTorch module for training, saving, and loading BC models
+- `bc_agent.py`: Agent wrapper for using trained BC models in the environment
+- `train_bc_models.py`: Script to train BC models on all layouts
+
+`ppo/`:
+- `ppo_client.py`: Driver code for training PPO agents with JAX/Flax
+- `train_ppo_sp.py`: Script for training self-play PPO agents
+- `train_ppo_bc.py`: Script for training PPO with BC partner
+- `configs/paper_configs.py`: Hyperparameters from the original paper
+
+`jaxmarl/`:
+- `ppo.py`: JAX/Flax implementation of PPO training
+- `overcooked_env.py`: JAX-compatible environment wrapper
+
+`visualization/`:
+- `play_game.py`: Watch trained agents play with pygame or save as GIF
 
 `human/`:
-- `process_data.py` script to process human data in specific formats to be used by DRL algorithms
-- `data_processing_utils.py` utils for the above
+- `process_data.py`: Script to process human data for DRL algorithms
+- `data_processing_utils.py`: Utils for the above
 
-`utils.py`: utils for the repo
+`utils.py`: General utilities
 
 
 ## Raw Data :ledger:
 
 The raw data used during BC training is >100 MB, which makes it inconvenient to distribute via git. The code uses pickled dataframes for training and testing, but in case one needs to original data it can be found [here](https://drive.google.com/drive/folders/1aGV8eqWeOG5BMFdUcVoP2NHU_GFPqi57?usp=share_link) 
 
-## Deprecated: Behavior Cloning and Reinforcement Learning 
+## Behavior Cloning and Reinforcement Learning 🤖
 
+The `human_aware_rl` module provides PyTorch-based Behavior Cloning and JAX-based PPO training.
 
+### Installation
 
+Install the ML dependencies:
 
+```bash
+# For Behavior Cloning (PyTorch)
+pip install -e ".[bc]"
+
+# For full RL training (JAX + PyTorch)
+pip install -e ".[harl]"
+
+# With CUDA support
+pip install -e ".[harl-cuda]"
+```
+
+### Training Behavior Cloning Models
+
+Train BC models on human demonstration data:
+
+```bash
+cd src/human_aware_rl
+
+# Train BC models for all 5 layouts
+python -m human_aware_rl.imitation.train_bc_models --all_layouts
+
+# Train for a specific layout
+python -m human_aware_rl.imitation.train_bc_models --layout cramped_room
+```
+
+This trains two models per layout:
+- **BC model** (from training data): Used as a partner during PPO training
+- **Human Proxy model** (from test data): Used for evaluation
+
+Models are saved to `src/human_aware_rl/bc_runs/`.
+
+### Training PPO Agents
+
+There are two training modes: **fast** (for quick iteration) and **full** (for paper reproduction).
+
+#### Fast Training (Recommended for Testing)
+
+Fast training uses 1M timesteps with early stopping, completing in ~15-30 minutes per layout:
+
+```bash
+cd src/human_aware_rl
+
+# Fast self-play training
+python -m human_aware_rl.ppo.train_ppo_sp --layout cramped_room --seed 0 --fast
+
+# Fast PPO_BC training (requires BC models first)
+python -m human_aware_rl.ppo.train_ppo_bc --layout cramped_room --seed 0 --fast
+
+# Custom timesteps
+python -m human_aware_rl.ppo.train_ppo_sp --layout cramped_room --timesteps 500000
+```
+
+#### Full Paper Reproduction
+
+Full training uses the paper's hyperparameters (6-8M timesteps), taking 2-4 hours per layout:
+
+```bash
+cd src/human_aware_rl
+
+# Self-play PPO (all layouts, 5 seeds each)
+python -m human_aware_rl.ppo.train_ppo_sp --all_layouts --seeds 0,10,20,30,40
+
+# PPO with BC partner
+python -m human_aware_rl.ppo.train_ppo_bc --all_layouts --seeds 0,10,20,30,40
+```
+
+#### Training Mode Comparison
+
+| Setting | Fast (`--fast`) | Full (paper) |
+|---------|-----------------|--------------|
+| Timesteps | 1M | 6.6-7.8M |
+| Time per layout | ~15-30 min | ~2-4 hours |
+| Early stopping | Yes (30 updates) | Yes (50 updates) |
+| Parallel envs | 32 | 32 |
+| Expected reward | ~70-80% of full | 100% |
+
+The fast mode is useful for:
+- Verifying the training pipeline works
+- Quick experimentation with hyperparameters
+- Debugging visualization and evaluation code
+
+Use full mode when you need to reproduce the paper's exact results.
+
+### Visualizing Trained Agents
+
+Watch trained agents play the game:
+
+```bash
+cd src/human_aware_rl
+
+# Save as GIF and auto-open (recommended)
+python -m human_aware_rl.visualization.play_game --bc_self_play --layout cramped_room --gif
+
+# Watch in real-time pygame window
+python -m human_aware_rl.visualization.play_game --bc_self_play --layout cramped_room
+
+# Quick demo with random agents (no training required)
+python -m human_aware_rl.visualization.play_game --random --layout cramped_room --gif
+```
+
+#### Agent Pairings for Evaluation
+
+The paper evaluates agents by pairing them with a **Human Proxy (HP)** - a BC model trained on held-out test data:
+
+```bash
+# BC vs Human Proxy
+python -m human_aware_rl.visualization.play_game \
+    --agent0_type bc --agent0_path bc_runs/train/cramped_room \
+    --agent1_type bc --agent1_path bc_runs/test/cramped_room \
+    --layout cramped_room --gif
+
+# PPO_SP vs Human Proxy (main paper evaluation)
+python -m human_aware_rl.visualization.play_game \
+    --agent0_type ppo --agent0_path results/ppo_sp/ppo_sp_cramped_room_seed0/checkpoint_*/params.pkl \
+    --agent1_type bc --agent1_path bc_runs/test/cramped_room \
+    --layout cramped_room --gif
+```
+
+| Model Path | Description |
+|------------|-------------|
+| `bc_runs/train/{layout}` | BC trained on human training data (PPO_BC partner) |
+| `bc_runs/test/{layout}` | Human Proxy for evaluation (held-out test data) |
+
+Available layouts: `cramped_room`, `asymmetric_advantages`, `coordination_ring`, `forced_coordination`, `counter_circuit`
+
+### Reproducing Paper Results (Figure 4)
+
+The evaluation pipeline reproduces Figure 4 from the paper, comparing different agent training methods:
+
+#### Complete Training Pipeline
+
+```bash
+cd src/human_aware_rl
+
+# Step 1: Train BC and Human Proxy models
+python -m human_aware_rl.imitation.train_bc_models --all_layouts
+
+# Step 2: Train Self-Play PPO agents
+python -m human_aware_rl.ppo.train_ppo_sp --all_layouts --seeds 0,10,20,30,40
+
+# Step 3: Train PPO with BC partner
+python -m human_aware_rl.ppo.train_ppo_bc --all_layouts --seeds 0,10,20,30,40
+
+# Step 4: Train Gold Standard PPO with Human Proxy (optional, for red line in Figure 4)
+python -m human_aware_rl.ppo.train_ppo_hp --all_layouts --seeds 0,10,20,30,40
+
+# Step 5: Train PBT agents (for Figure 4b)
+python -m human_aware_rl.ppo.train_pbt --all_layouts
+```
+
+#### Running Evaluation
+
+```bash
+# Check which models are available
+python -m human_aware_rl.evaluation.run_paper_evaluation --check_only
+
+# Run full evaluation and generate Figure 4
+python -m human_aware_rl.evaluation.run_paper_evaluation --all
+
+# Or evaluate specific figures
+python -m human_aware_rl.evaluation.run_paper_evaluation --figure 4a  # Self-play comparison
+python -m human_aware_rl.evaluation.run_paper_evaluation --figure 4b  # PBT comparison
+```
+
+#### Figure 4 Evaluation Configs
+
+**Figure 4(a) - Self-Play Comparison:**
+| Config | Description | Color |
+|--------|-------------|-------|
+| PPO_HP + HP | Gold standard (PPO trained with HP) | Red dotted line |
+| SP + SP | Self-play baseline | White bars |
+| SP + HP | Self-play agent + Human Proxy | Teal bars |
+| PPO_BC + HP | BC-trained PPO + Human Proxy | Orange bars |
+| BC + HP | BC agent + Human Proxy | Gray bars |
+
+**Figure 4(b) - PBT Comparison:**
+- Same structure but with PBT agents instead of Self-Play
+
+#### Quick Evaluation (Fewer Seeds)
+
+```bash
+# Fast evaluation with single seed
+python -m human_aware_rl.evaluation.run_paper_evaluation --all --seeds 0 --num_games 5
+```
+
+### Running Tests
+
+```bash
+cd src/human_aware_rl
+./run_tests.sh
+```
 
 ## Further Issues and questions ❓
 

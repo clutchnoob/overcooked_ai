@@ -5,9 +5,26 @@ import random
 import re
 import shutil
 
-import git
 import numpy as np
-import tensorflow as tf
+
+# Optional imports
+try:
+    import git
+    GIT_AVAILABLE = True
+except ImportError:
+    GIT_AVAILABLE = False
+
+try:
+    import torch
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+
+try:
+    import jax
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
 
 WANDB_PROJECT = "Overcooked AI"
 
@@ -24,30 +41,15 @@ def create_dir_if_not_exists(dir_path):
         os.makedirs(dir_path)
 
 
-def reset_tf():
-    """Clean up tensorflow graph and session.
-    NOTE: this also resets the tensorflow seed"""
-    tf.reset_default_graph()
-    if tf.get_default_session() is not None:
-        tf.get_default_session().close()
-
-
-def num_tf_params():
-    """Prints number of trainable parameters defined"""
-    total_parameters = 0
-    for variable in tf.trainable_variables():
-        # shape is an array of tf.Dimension
-        shape = variable.get_shape()
-        variable_parameters = 1
-        for dim in shape:
-            variable_parameters *= dim.value
-            total_parameters += variable_parameters
-    print(total_parameters)
-
-
 def get_current_commit_hash():
-    repo = git.Repo(search_parent_directories=True)
-    return repo.head.object.hexsha
+    """Get the current git commit hash."""
+    if not GIT_AVAILABLE:
+        return "unknown"
+    try:
+        repo = git.Repo(search_parent_directories=True)
+        return repo.head.object.hexsha
+    except Exception:
+        return "unknown"
 
 
 def get_trailing_number(s):
@@ -104,9 +106,21 @@ def accuracy(action_probs, y):
 
 
 def set_global_seed(seed):
+    """Set random seed for reproducibility across all frameworks."""
     random.seed(seed)
     np.random.seed(seed)
-    tf.random.set_seed(seed)
+    
+    # Set PyTorch seed if available
+    if TORCH_AVAILABLE:
+        torch.manual_seed(seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(seed)
+    
+    # Set JAX seed if available
+    if JAX_AVAILABLE:
+        # Note: JAX uses explicit PRNGKey, but we can set numpy seed
+        # which affects any numpy operations in JAX code
+        pass
 
 
 def prepare_nested_default_dict_for_pickle(nested_defaultdict):
