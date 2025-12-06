@@ -12,10 +12,6 @@ from typing import Optional, List
 import numpy as np
 
 from human_aware_rl.data_dir import DATA_DIR
-from human_aware_rl.ppo.configs.paper_configs import (
-    PAPER_PPO_BC_CONFIGS,
-    PAPER_COMMON_PARAMS,
-)
 
 # Output directories
 PPO_GAIL_SAVE_DIR = os.path.join(DATA_DIR, "ppo_gail_runs")
@@ -70,23 +66,39 @@ def train_ppo_gail(
     # Get environment layout name
     env_layout = LAYOUT_TO_ENV.get(layout, layout)
     
-    # Get paper config for this layout (use same as PPO_BC)
-    layout_config = PAPER_PPO_BC_CONFIGS.get(layout, {})
-    
-    # Merge with common params
-    config_dict = {**PAPER_COMMON_PARAMS, **layout_config}
-    
-    # Override total_timesteps if provided
-    if total_timesteps is not None:
-        # Calculate num_training_iters from timesteps
-        steps_per_iter = config_dict.get("num_envs", 32) * config_dict.get("num_steps", 400)
-        config_dict["num_training_iters"] = total_timesteps // steps_per_iter
-    
-    # Set early stopping
-    config_dict["early_stop_patience"] = early_stop_patience
-    
-    # Set seed
-    config_dict["seed"] = seed
+    # Build config directly for JAX PPOConfig
+    config_dict = {
+        "layout_name": env_layout,
+        "horizon": 400,
+        "num_envs": 32,
+        "old_dynamics": True,
+        "total_timesteps": total_timesteps if total_timesteps else 8_000_000,
+        "learning_rate": 1.63e-4,  # Paper value
+        "num_steps": 400,
+        "num_minibatches": 10,
+        "num_epochs": 8,
+        "gamma": 0.964,  # Paper value
+        "gae_lambda": 0.6,  # Paper value
+        "clip_eps": 0.132,  # Paper value
+        "ent_coef": 0.2,  # Paper uses entropy annealing
+        "vf_coef": 0.00995,  # Paper value
+        "max_grad_norm": 0.247,  # Paper value
+        "kl_coeff": 0.197,  # Paper value
+        "entropy_coeff_start": 0.2,
+        "entropy_coeff_end": 0.1,
+        "entropy_coeff_horizon": 3e5,
+        "use_entropy_annealing": True,
+        "num_hidden_layers": 3,
+        "hidden_dim": 64,
+        "num_filters": 25,
+        "num_conv_layers": 3,
+        "use_lstm": False,
+        "reward_shaping_factor": 1.0,
+        "use_phi": False,
+        "bc_schedule": [(0, 1.0), (8_000_000, 0.0)],  # Anneal GAIL partner
+        "early_stop_patience": early_stop_patience,
+        "seed": seed,
+    }
     
     # Load GAIL model as partner
     if gail_model_dir is None:
@@ -138,20 +150,24 @@ def train_ppo_gail(
             self.agent_index = 1  # GAIL partner is usually player 1
             
         def action(self, state):
-            """Get action for state."""
+            """Get action for state. Returns (action, info) like BCAgent."""
             obs = self.featurize_fn(state)[self.agent_index]
             obs_flat = obs.flatten()
             obs_tensor = torch.FloatTensor(obs_flat).unsqueeze(0).to(device)
             
             with torch.no_grad():
-                action_probs = self.policy(obs_tensor)
+                # GAILPolicy.forward() returns (logits, value)
+                logits, _ = self.policy(obs_tensor)
+                action_probs = torch.softmax(logits, dim=-1)
                 
                 if self.stochastic:
                     action_idx = torch.multinomial(action_probs, 1).item()
                 else:
                     action_idx = action_probs.argmax(dim=-1).item()
             
-            return Action.INDEX_TO_ACTION[action_idx]
+            action = Action.INDEX_TO_ACTION[action_idx]
+            info = {"action_probs": action_probs.cpu().numpy()}
+            return action, info
         
         def set_agent_index(self, index):
             self.agent_index = index
@@ -176,19 +192,28 @@ def train_ppo_gail(
         print()
     
     # Create PPO config
-    config = PPOConfig(
-        layout_name=env_layout,
-        **config_dict
-    )
+    config = PPOConfig(**config_dict)
     
-    # Create trainer with GAIL partner
-    trainer = PPOTrainer(config, bc_agent=gail_agent)
+    # Create trainer and inject GAIL agent as BC partner
+    trainer = PPOTrainer(config)
+    trainer.bc_agent = gail_agent  # Use GAIL instead of BC
     
     # Train
     metrics = trainer.train()
     
-    # Save model and config
-    trainer.save(run_dir)
+    # Copy latest checkpoint to run_dir
+    import shutil
+    checkpoint_dir = os.path.join(
+        trainer.config.results_dir,
+        trainer.config.experiment_name,
+    )
+    if os.path.exists(checkpoint_dir):
+        # Find latest checkpoint
+        checkpoints = sorted([d for d in os.listdir(checkpoint_dir) if d.startswith("checkpoint_")])
+        if checkpoints:
+            latest = os.path.join(checkpoint_dir, checkpoints[-1])
+            for f in os.listdir(latest):
+                shutil.copy2(os.path.join(latest, f), os.path.join(run_dir, f))
     
     with open(os.path.join(run_dir, "config.json"), "w") as f:
         json.dump(config_dict, f, indent=2)

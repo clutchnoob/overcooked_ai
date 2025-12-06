@@ -19,6 +19,6 @@ conda activate MAL_env
 # Navigate to human_aware_rl
 cd src/human_aware_rl
 
-# Run PPO_GAIL training (fast mode)
-python -m human_aware_rl.ppo.train_ppo_gail --layout counter_circuit --fast --seeds 0,10,20,30,40
+# Run PPO_GAIL training (fast mode, single seed)
+python -m human_aware_rl.ppo.train_ppo_gail --layout counter_circuit --seed 0 --fast
 
