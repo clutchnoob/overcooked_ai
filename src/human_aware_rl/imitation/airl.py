@@ -58,46 +58,56 @@ class AIRLConfig:
     data_path: str = CLEAN_2019_HUMAN_DATA_TRAIN
     featurize_states: bool = True
     
-    # Discriminator architecture
-    disc_hidden_dim: int = 64
+    # Discriminator architecture (SMALLER to prevent overfitting on scarce data)
+    disc_hidden_dim: int = 32  # Reduced from 64 (AIRL paper uses 32)
     disc_num_layers: int = 2
-    disc_g_linear: bool = True  # Use linear g(s) for reward (paper recommendation)
+    disc_g_linear: bool = True  # Linear g(s) for reward (paper recommendation)
     
-    # Policy architecture (same as BC)
+    # Policy architecture
     policy_hidden_dim: int = 64
     policy_num_layers: int = 2
     use_lstm: bool = False
     cell_size: int = 256
     
-    # Training hyperparameters (from AIRL paper Appendix D)
-    discriminator_lr: float = 3e-4
-    policy_lr: float = 3e-4
-    gamma: float = 0.99
-    batch_size: int = 256
-    disc_updates_per_iter: int = 5  # Discriminator updates per policy update
-    policy_epochs: int = 8  # PPO epochs for policy
+    # BC warm-start and KL regularization (CRITICAL for scarce data)
+    bc_model_dir: Optional[str] = None  # Path to pretrained BC model to initialize policy
+    kl_coef: float = 0.5  # KL divergence penalty to stay close to BC
+    kl_target: float = 0.01  # Target KL divergence (adaptive coefficient)
+    use_adaptive_kl: bool = True  # Adaptively adjust kl_coef to hit kl_target
     
-    # PPO hyperparameters
-    clip_eps: float = 0.2
+    # Training hyperparameters (TESTED: very conservative to preserve BC behavior)
+    discriminator_lr: float = 1e-5  # Very slow discriminator
+    policy_lr: float = 1e-5  # Very slow policy (fine-tuning from BC)
+    gamma: float = 0.99
+    batch_size: int = 64  # Small batch
+    disc_updates_per_iter: int = 1  # Minimal discriminator updates
+    policy_epochs: int = 2  # Minimal policy updates (preserves BC behavior)
+    
+    # PPO hyperparameters (LOW entropy - stochastic rollouts provide exploration)
+    clip_eps: float = 0.1  # Small clipping for stability
     vf_coef: float = 0.5
-    ent_coef: float = 0.1  # Higher entropy for exploration
+    ent_coef: float = 0.01  # LOW entropy (tested: works with stochastic rollouts)
+    ent_coef_final: float = 0.05  # Slight ramp for later exploration
+    ent_warmup_iters: int = 200  # Slow ramp
     gae_lambda: float = 0.95
     max_grad_norm: float = 0.5
     
-    # Sample mixing (prevents reward forgetting)
-    sample_buffer_size: int = 20  # Keep samples from last N iterations
+    # Regularization
+    label_smoothing: float = 0.2  # Higher smoothing (expert=0.8, policy=0.2)
+    grad_penalty_weight: float = 10.0
+    weight_decay: float = 1e-4  # L2 regularization
+    
+    # Sample mixing
+    sample_buffer_size: int = 50  # Keep history
     
     # Training length
-    total_timesteps: int = 5_000_000  # 5M timesteps
-    steps_per_iter: int = 10000  # Steps before each update cycle
+    total_timesteps: int = 500_000  # 500K timesteps
+    steps_per_iter: int = 400  # One episode per iteration (tested: works)
     
     # Logging and saving
     log_interval: int = 1
-    save_interval: int = 10
+    save_interval: int = 20
     verbose: bool = True
-    
-    # Early stopping
-    early_stop_patience: int = 50
     
     # Output
     results_dir: str = "results/airl"
@@ -550,6 +560,9 @@ class AIRLTrainer:
         # Sample buffer for mixing
         self.policy_sample_buffer = deque(maxlen=config.sample_buffer_size)
         
+        # BC model reference (for KL regularization)
+        self.bc_model = None
+        
         # Logging
         self.train_info = {
             "disc_losses": [],
@@ -662,15 +675,121 @@ class AIRLTrainer:
                 num_layers=self.config.policy_num_layers,
             ).to(self.device)
         
-        # Optimizers
+        # BC WARM-START: Initialize policy from pretrained BC model
+        if self.config.bc_model_dir is not None:
+            self._load_bc_weights()
+        
+        # Optimizers with weight decay for regularization
+        weight_decay = getattr(self.config, 'weight_decay', 1e-4)
         self.disc_optimizer = torch.optim.Adam(
             self.discriminator.parameters(),
             lr=self.config.discriminator_lr,
+            weight_decay=weight_decay,
         )
         self.policy_optimizer = torch.optim.Adam(
             self.policy.parameters(),
             lr=self.config.policy_lr,
+            weight_decay=weight_decay,
         )
+    
+    def _load_bc_weights(self):
+        """Load weights from a pretrained BC model to initialize the AIRL policy and keep as anchor."""
+        from human_aware_rl.imitation.behavior_cloning import load_bc_model
+        
+        if self.config.verbose:
+            print(f"Loading BC model from {self.config.bc_model_dir} for warm-start and KL anchor...")
+        
+        try:
+            bc_model, bc_params = load_bc_model(self.config.bc_model_dir, device=self.device)
+            
+            # STORE BC MODEL AS FROZEN REFERENCE FOR KL REGULARIZATION
+            self.bc_model = bc_model
+            self.bc_model.eval()
+            for param in self.bc_model.parameters():
+                param.requires_grad = False
+            
+            if self.config.verbose:
+                print(f"  BC model stored as frozen anchor for KL regularization")
+            
+            # Copy weights from BC model to AIRL policy's actor
+            bc_state_dict = bc_model.state_dict()
+            airl_state_dict = self.policy.state_dict()
+            
+            if self.config.verbose:
+                print(f"  BC model keys: {list(bc_state_dict.keys())}")
+                print(f"  AIRL policy keys: {list(airl_state_dict.keys())}")
+            
+            copied = 0
+            
+            # Copy hidden layers: network.0 -> feature_extractor.0, network.2 -> feature_extractor.2
+            for bc_key in bc_state_dict.keys():
+                if 'network' in bc_key and 'network.4' not in bc_key:
+                    airl_key = bc_key.replace('network', 'feature_extractor')
+                    if airl_key in airl_state_dict:
+                        if bc_state_dict[bc_key].shape == airl_state_dict[airl_key].shape:
+                            airl_state_dict[airl_key] = bc_state_dict[bc_key].clone()
+                            copied += 1
+                            if self.config.verbose:
+                                print(f"  Copied {bc_key} -> {airl_key}")
+                        else:
+                            print(f"  Shape mismatch: {bc_key} {bc_state_dict[bc_key].shape} vs {airl_key} {airl_state_dict[airl_key].shape}")
+            
+            # Copy output layer: network.4 -> actor
+            if 'network.4.weight' in bc_state_dict and 'actor.weight' in airl_state_dict:
+                if bc_state_dict['network.4.weight'].shape == airl_state_dict['actor.weight'].shape:
+                    airl_state_dict['actor.weight'] = bc_state_dict['network.4.weight'].clone()
+                    airl_state_dict['actor.bias'] = bc_state_dict['network.4.bias'].clone()
+                    copied += 2
+                    if self.config.verbose:
+                        print(f"  Copied network.4 -> actor")
+                else:
+                    print(f"  Shape mismatch: network.4 {bc_state_dict['network.4.weight'].shape} vs actor {airl_state_dict['actor.weight'].shape}")
+            
+            self.policy.load_state_dict(airl_state_dict)
+            
+            if self.config.verbose:
+                print(f"Successfully initialized AIRL policy from BC ({copied} parameters copied)")
+                self._verify_bc_initialization()
+                
+        except Exception as e:
+            import traceback
+            print(f"Warning: Could not load BC model for warm-start: {e}")
+            traceback.print_exc()
+            print("Continuing with random initialization (NO KL regularization)...")
+            self.bc_model = None
+    
+    def _verify_bc_initialization(self):
+        """Run a quick test to verify BC initialization works."""
+        print("\n  Verifying BC initialization with test rollout...")
+        
+        # Do a short deterministic rollout
+        state = self.mdp.get_standard_start_state()
+        obs = self.base_env.featurize_state_mdp(state)
+        
+        total_reward = 0
+        for step in range(100):  # Short test
+            obs_0 = torch.tensor(obs[0].flatten(), dtype=torch.float32, device=self.device).unsqueeze(0)
+            obs_1 = torch.tensor(obs[1].flatten(), dtype=torch.float32, device=self.device).unsqueeze(0)
+            
+            with torch.no_grad():
+                # Use DETERMINISTIC actions for verification
+                logits_0, _ = self.policy(obs_0)
+                logits_1, _ = self.policy(obs_1)
+                action_0 = torch.argmax(logits_0, dim=-1).item()
+                action_1 = torch.argmax(logits_1, dim=-1).item()
+            
+            joint_action = (Action.INDEX_TO_ACTION[action_0], Action.INDEX_TO_ACTION[action_1])
+            next_state, info = self.base_env.mdp.get_state_transition(state, joint_action)
+            
+            env_reward = sum(info.get("sparse_reward_by_agent", [0, 0]))
+            total_reward += env_reward
+            
+            state = next_state
+            obs = self.base_env.featurize_state_mdp(state)
+        
+        print(f"  Test rollout (100 steps, deterministic): reward = {total_reward}")
+        if total_reward == 0:
+            print("  WARNING: BC-initialized policy got 0 reward in test. Check if BC model is trained.")
     
     def _collect_rollout(self, num_steps: int) -> Dict[str, torch.Tensor]:
         """Collect a rollout from the environment using current policy."""
@@ -808,11 +927,43 @@ class AIRLTrainer:
             policy_action_log_probs,
         )
         
-        # Binary cross-entropy loss
-        # Expert should be classified as 1, policy as 0
-        expert_loss = -torch.log(expert_d + 1e-8).mean()
-        policy_loss = -torch.log(1 - policy_d + 1e-8).mean()
+        # Binary cross-entropy loss with LABEL SMOOTHING
+        # This prevents the discriminator from being overconfident
+        smooth = self.config.label_smoothing
+        expert_target = 1.0 - smooth  # 0.9 instead of 1.0
+        policy_target = smooth  # 0.1 instead of 0.0
+        
+        # Smoothed BCE loss
+        expert_loss = -(expert_target * torch.log(expert_d + 1e-8) + 
+                        (1 - expert_target) * torch.log(1 - expert_d + 1e-8)).mean()
+        policy_loss = -(policy_target * torch.log(policy_d + 1e-8) + 
+                        (1 - policy_target) * torch.log(1 - policy_d + 1e-8)).mean()
         disc_loss = expert_loss + policy_loss
+        
+        # GRADIENT PENALTY for stability (WGAN-GP style)
+        if self.config.grad_penalty_weight > 0:
+            # Interpolate between expert and policy states
+            alpha = torch.rand(len(expert_batch["states"]), 1, device=self.device)
+            interp_states = alpha * expert_batch["states"] + (1 - alpha) * policy_batch["states"]
+            interp_states.requires_grad_(True)
+            
+            # Get discriminator output for interpolated states
+            interp_next = alpha * expert_batch["next_states"] + (1 - alpha) * policy_batch["next_states"]
+            interp_dones = alpha.squeeze() * expert_batch["dones"] + (1 - alpha.squeeze()) * policy_batch["dones"]
+            interp_log_probs = alpha.squeeze() * expert_action_log_probs + (1 - alpha.squeeze()) * policy_action_log_probs
+            
+            interp_d = self.discriminator(interp_states, interp_next, interp_dones, interp_log_probs)
+            
+            # Compute gradient penalty
+            gradients = torch.autograd.grad(
+                outputs=interp_d.sum(),
+                inputs=interp_states,
+                create_graph=True,
+                retain_graph=True,
+            )[0]
+            grad_norm = gradients.norm(2, dim=1)
+            grad_penalty = ((grad_norm - 1) ** 2).mean()
+            disc_loss = disc_loss + self.config.grad_penalty_weight * grad_penalty
         
         # Gradient step
         self.disc_optimizer.zero_grad()
@@ -871,6 +1022,25 @@ class AIRLTrainer:
         
         returns = advantages + values
         return advantages, returns
+    
+    def _compute_mean_kl(self, states: torch.Tensor) -> float:
+        """Compute mean KL divergence between AIRL policy and BC anchor."""
+        if not hasattr(self, 'bc_model') or self.bc_model is None:
+            return 0.0
+        
+        with torch.no_grad():
+            # Get BC policy distribution
+            bc_logits = self.bc_model(states)
+            bc_probs = F.softmax(bc_logits, dim=-1)
+            
+            # Get AIRL policy distribution
+            airl_logits, _ = self.policy(states)
+            airl_probs = F.softmax(airl_logits, dim=-1)
+            airl_log_probs = F.log_softmax(airl_logits, dim=-1)
+            
+            # KL(π_AIRL || π_BC)
+            kl_div = (airl_probs * (airl_log_probs - torch.log(bc_probs + 1e-8))).sum(dim=-1)
+            return kl_div.mean().item()
     
     def _update_policy(self, rollout: Dict[str, torch.Tensor]) -> float:
         """
@@ -935,11 +1105,31 @@ class AIRLTrainer:
                 # Entropy bonus
                 entropy_loss = -entropy.mean()
                 
-                # Total loss
+                # KL REGULARIZATION: Keep policy close to BC anchor
+                kl_loss = torch.tensor(0.0, device=self.device)
+                if hasattr(self, 'bc_model') and self.bc_model is not None:
+                    with torch.no_grad():
+                        bc_logits = self.bc_model(rollout["states"][idx])
+                        bc_probs = F.softmax(bc_logits, dim=-1)
+                    
+                    # Get AIRL policy probabilities
+                    airl_logits, _ = self.policy(rollout["states"][idx])
+                    airl_probs = F.softmax(airl_logits, dim=-1)
+                    airl_log_probs = F.log_softmax(airl_logits, dim=-1)
+                    
+                    # KL(π_AIRL || π_BC) = sum(π_AIRL * log(π_AIRL / π_BC))
+                    kl_div = (airl_probs * (airl_log_probs - torch.log(bc_probs + 1e-8))).sum(dim=-1)
+                    kl_loss = kl_div.mean()
+                
+                # Total loss (use current entropy and KL coefficients)
+                current_ent_coef = getattr(self, 'current_ent_coef', self.config.ent_coef)
+                current_kl_coef = getattr(self, 'current_kl_coef', self.config.kl_coef)
+                
                 loss = (
                     actor_loss
                     + self.config.vf_coef * value_loss
-                    + self.config.ent_coef * entropy_loss
+                    + current_ent_coef * entropy_loss
+                    + current_kl_coef * kl_loss  # KL penalty to stay close to BC
                 )
                 
                 # Gradient step
@@ -963,21 +1153,44 @@ class AIRLTrainer:
         total_timesteps = 0
         num_iters = self.config.total_timesteps // self.config.steps_per_iter
         
-        # Early stopping tracking
-        best_reward = float('-inf')
-        no_improvement_count = 0
+        # For AIRL, we track discriminator accuracy as the convergence metric
+        # Goal: D_acc should stay around 0.5-0.7 (balanced adversarial game)
+        # We DON'T use environment reward for early stopping since AIRL
+        # optimizes for imitation, not task reward
+        recent_disc_accs = []
+        
+        # Initialize entropy coefficient (will be ramped up during training)
+        self.current_ent_coef = self.config.ent_coef
+        ent_warmup_iters = getattr(self.config, 'ent_warmup_iters', 50)
+        ent_coef_final = getattr(self.config, 'ent_coef_final', self.config.ent_coef)
+        
+        # Initialize KL coefficient (adaptive)
+        self.current_kl_coef = self.config.kl_coef
+        kl_target = getattr(self.config, 'kl_target', 0.01)
+        use_adaptive_kl = getattr(self.config, 'use_adaptive_kl', True)
+        
+        # Track KL divergence for logging and adaptive adjustment
+        self.recent_kl = []
         
         if self.config.verbose:
-            print(f"\nStarting AIRL training")
+            print(f"\nStarting AIRL training with KL regularization")
             print(f"Layout: {self.config.layout_name}")
             print(f"Total timesteps: {self.config.total_timesteps:,}")
             print(f"Steps per iteration: {self.config.steps_per_iter:,}")
             print(f"Device: {self.device}")
+            print(f"Entropy coef: {self.config.ent_coef} -> {ent_coef_final} over {ent_warmup_iters} iters")
+            print(f"KL coef: {self.config.kl_coef} (target KL: {kl_target}, adaptive: {use_adaptive_kl})")
+            print(f"BC anchor: {'Yes' if hasattr(self, 'bc_model') and self.bc_model is not None else 'No'}")
             print()
         
         start_time = time.time()
         
         for iteration in range(num_iters):
+            # Entropy coefficient warmup: start low (like BC), ramp up for exploration
+            if iteration < ent_warmup_iters:
+                self.current_ent_coef = self.config.ent_coef + (ent_coef_final - self.config.ent_coef) * (iteration / ent_warmup_iters)
+            else:
+                self.current_ent_coef = ent_coef_final
             # Collect rollout
             rollout = self._collect_rollout(self.config.steps_per_iter)
             total_timesteps += self.config.steps_per_iter
@@ -1023,43 +1236,57 @@ class AIRLTrainer:
             # Policy update
             policy_loss = self._update_policy(rollout)
             
-            # Track episode rewards
+            # Compute KL divergence from BC anchor
+            mean_kl = 0.0
+            if hasattr(self, 'bc_model') and self.bc_model is not None:
+                mean_kl = self._compute_mean_kl(rollout["states"])
+                self.recent_kl.append(mean_kl)
+                if len(self.recent_kl) > 50:
+                    self.recent_kl.pop(0)
+                
+                # Adaptive KL coefficient adjustment
+                if use_adaptive_kl and len(self.recent_kl) >= 10:
+                    avg_kl = np.mean(self.recent_kl[-10:])
+                    if avg_kl > kl_target * 1.5:
+                        # KL too high, increase penalty
+                        self.current_kl_coef = min(self.current_kl_coef * 1.5, 10.0)
+                    elif avg_kl < kl_target * 0.5:
+                        # KL too low, decrease penalty
+                        self.current_kl_coef = max(self.current_kl_coef / 1.5, 0.01)
+            
+            # Compute mean AIRL reward for this rollout
+            airl_rewards = self._compute_airl_rewards(rollout)
+            mean_airl_reward = airl_rewards.mean().item()
+            
+            # Track episode rewards (environment reward, for reference only)
             episode_rewards = rollout["episode_rewards"]
             if episode_rewards:
-                mean_reward = np.mean(episode_rewards)
+                mean_env_reward = np.mean(episode_rewards)
                 self.train_info["episode_rewards"].extend(episode_rewards)
             else:
-                mean_reward = 0
+                mean_env_reward = 0
             
-            # Early stopping
-            if episode_rewards:
-                if mean_reward > best_reward:
-                    best_reward = mean_reward
-                    no_improvement_count = 0
-                else:
-                    no_improvement_count += 1
-                
-                if no_improvement_count >= self.config.early_stop_patience:
-                    if self.config.verbose:
-                        print(f"\nEarly stopping at iteration {iteration}")
-                    break
+            # Track discriminator accuracy for convergence monitoring
+            mean_disc_acc = np.mean(disc_accs)
+            recent_disc_accs.append(mean_disc_acc)
+            if len(recent_disc_accs) > 50:
+                recent_disc_accs.pop(0)
             
             # Logging
             self.train_info["disc_losses"].append(np.mean(disc_losses))
             self.train_info["policy_losses"].append(policy_loss)
-            self.train_info["disc_accuracy"].append(np.mean(disc_accs))
+            self.train_info["disc_accuracy"].append(mean_disc_acc)
             
             if iteration % self.config.log_interval == 0 and self.config.verbose:
                 elapsed = time.time() - start_time
                 fps = total_timesteps / elapsed if elapsed > 0 else 0
                 
+                # Show KL divergence and all metrics
                 print(f"Iter {iteration}/{num_iters} | "
-                      f"Steps: {total_timesteps:,} | "
                       f"FPS: {fps:.0f} | "
-                      f"D_loss: {np.mean(disc_losses):.4f} | "
-                      f"D_acc: {np.mean(disc_accs):.2f} | "
-                      f"P_loss: {policy_loss:.4f} | "
-                      f"Reward: {mean_reward:.1f}")
+                      f"KL: {mean_kl:.3f} (c={self.current_kl_coef:.2f}) | "
+                      f"D_acc: {mean_disc_acc:.2f} | "
+                      f"Env_R: {mean_env_reward:.0f}")
             
             # Save checkpoint
             if iteration % self.config.save_interval == 0:
@@ -1070,13 +1297,15 @@ class AIRLTrainer:
         
         if self.config.verbose:
             total_time = time.time() - start_time
+            avg_disc_acc = np.mean(recent_disc_accs) if recent_disc_accs else 0.5
             print(f"\nTraining completed in {total_time:.1f}s")
-            print(f"Best reward: {best_reward:.2f}")
+            print(f"Final D_acc: {avg_disc_acc:.2f} (target: 0.5-0.7)")
+            print(f"Total iterations: {iteration + 1}")
         
         return {
             "total_timesteps": total_timesteps,
             "train_info": self.train_info,
-            "best_reward": best_reward,
+            "final_disc_acc": np.mean(recent_disc_accs) if recent_disc_accs else 0.5,
         }
     
     def save_checkpoint(self, step: int):

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -n 16
-#SBATCH -t 01:00:00
-#SBATCH --mem=16G
+#SBATCH -t 12:00:00
+#SBATCH --mem=32G
 #SBATCH --job-name=airl_coord
 #SBATCH --output=logs/airl_coordination_ring_%j.out
 #SBATCH --error=logs/airl_coordination_ring_%j.err
@@ -15,5 +15,6 @@ cd src/human_aware_rl
 
 mkdir -p "$SLURM_SUBMIT_DIR/logs"
 
-python -m human_aware_rl.imitation.train_airl --layout coordination_ring --fast
+# Full AIRL training (5M timesteps, ~8-12 hours)
+python -m human_aware_rl.imitation.train_airl --layout coordination_ring
 

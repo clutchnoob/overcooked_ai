@@ -63,53 +63,61 @@ LAYOUT_TO_ENV = {
 }
 
 
-# AIRL hyperparameters (based on Fu et al. 2018 Appendix D)
+# AIRL hyperparameters (tuned for SCARCE human data - only ~14 trajectories)
+# Key insights:
+# 1. BC warm-start is critical
+# 2. Stochastic rollouts work (provides natural exploration)
+# 3. Keep entropy LOW - don't need high entropy since stochastic sampling already explores
+# 4. Very conservative learning rates to preserve BC behavior
 DEFAULT_AIRL_PARAMS = {
-    # Discriminator
-    "disc_hidden_dim": 64,
+    # Discriminator (SMALLER to prevent overfitting)
+    "disc_hidden_dim": 32,  # AIRL paper uses 32
     "disc_num_layers": 2,
     "disc_g_linear": True,  # Linear g(s) for reward disentanglement
     
-    # Policy
+    # Policy (match BC architecture)
     "policy_hidden_dim": 64,
     "policy_num_layers": 2,
     
-    # Training
-    "discriminator_lr": 3e-4,
-    "policy_lr": 3e-4,
+    # Training (VERY conservative - preserve BC behavior)
+    "discriminator_lr": 1e-5,  # Very slow discriminator (tested: works)
+    "policy_lr": 1e-5,  # Very slow policy (fine-tuning from BC)
     "gamma": 0.99,
-    "batch_size": 256,
-    "disc_updates_per_iter": 5,
-    "policy_epochs": 8,
+    "batch_size": 64,  # Small batch
+    "disc_updates_per_iter": 1,  # Minimal discriminator updates
+    "policy_epochs": 2,  # Minimal policy updates (tested: works)
     
-    # PPO
-    "clip_eps": 0.2,
+    # PPO with LOW entropy (stochastic rollouts provide exploration)
+    "clip_eps": 0.1,  # Small clipping for stability
     "vf_coef": 0.5,
-    "ent_coef": 0.1,
+    "ent_coef": 0.01,  # LOW entropy (tested: works with stochastic rollouts)
+    "ent_coef_final": 0.05,  # Slight ramp for later exploration
+    "ent_warmup_iters": 200,  # Slow ramp
     "gae_lambda": 0.95,
     
-    # Sample mixing
-    "sample_buffer_size": 20,
+    # Regularization
+    "label_smoothing": 0.2,  # Higher smoothing (expert=0.8, policy=0.2)
+    "grad_penalty_weight": 10.0,
+    "weight_decay": 1e-4,
+    
+    # Sample mixing (keep history)
+    "sample_buffer_size": 50,
     
     # Length
-    "total_timesteps": 5_000_000,  # 5M timesteps
-    "steps_per_iter": 10000,
+    "total_timesteps": 500_000,  # 500K timesteps (converges faster with good init)
+    "steps_per_iter": 400,  # One episode per iteration (tested: works)
     
-    # Early stopping
-    "early_stop_patience": 50,
+    # BC warm-start (CRITICAL)
+    "use_bc_warmstart": True,
 }
 
 
-# Fast training parameters (~15-30 min per layout)
+# Fast training parameters (~10-20 min per layout)
 FAST_AIRL_PARAMS = {
     **DEFAULT_AIRL_PARAMS,
-    "total_timesteps": 100_000,  # 100K timesteps (much faster)
-    "steps_per_iter": 2000,  # Smaller iterations for quicker updates
-    "early_stop_patience": 15,  # Aggressive early stopping
-    "sample_buffer_size": 5,  # Smaller buffer
-    "disc_updates_per_iter": 3,  # Fewer discriminator updates
-    "policy_epochs": 4,  # Fewer PPO epochs
-    "batch_size": 128,  # Smaller batch for faster iteration
+    "total_timesteps": 200_000,  # 200K timesteps
+    "steps_per_iter": 400,
+    "sample_buffer_size": 30,
 }
 
 
@@ -171,6 +179,25 @@ def train_airl_for_layout(
     # Set seed
     np.random.seed(seed)
     
+    # Check for BC model for warm-start
+    bc_model_dir = None
+    use_bc_warmstart = params.get("use_bc_warmstart", True)
+    
+    if use_bc_warmstart:
+        # Look for pretrained BC model
+        from human_aware_rl.imitation.behavior_cloning import BC_SAVE_DIR
+        potential_bc_dir = os.path.join(BC_SAVE_DIR, data_split, layout)
+        
+        if os.path.exists(potential_bc_dir) and os.path.exists(os.path.join(potential_bc_dir, "model.pt")):
+            bc_model_dir = potential_bc_dir
+            if verbose:
+                print(f"Found BC model for warm-start: {bc_model_dir}")
+        else:
+            if verbose:
+                print(f"No BC model found at {potential_bc_dir}")
+                print("Training AIRL from scratch (recommend training BC first!)")
+                print("Run: python -m human_aware_rl.imitation.train_bc_models")
+    
     # Create config
     # Note: AIRL internally loads data using layout_name for environment
     # and data_path for demonstrations. We need to modify the data loading
@@ -186,6 +213,7 @@ def train_airl_for_layout(
         disc_g_linear=params["disc_g_linear"],
         policy_hidden_dim=params["policy_hidden_dim"],
         policy_num_layers=params["policy_num_layers"],
+        bc_model_dir=bc_model_dir,  # BC WARM-START
         discriminator_lr=params["discriminator_lr"],
         policy_lr=params["policy_lr"],
         gamma=params["gamma"],
@@ -195,11 +223,15 @@ def train_airl_for_layout(
         clip_eps=params["clip_eps"],
         vf_coef=params["vf_coef"],
         ent_coef=params["ent_coef"],
+        ent_coef_final=params.get("ent_coef_final", params["ent_coef"]),
+        ent_warmup_iters=params.get("ent_warmup_iters", 50),
         gae_lambda=params["gae_lambda"],
+        label_smoothing=params.get("label_smoothing", 0.2),
+        grad_penalty_weight=params.get("grad_penalty_weight", 10.0),
+        weight_decay=params.get("weight_decay", 1e-4),
         sample_buffer_size=params["sample_buffer_size"],
         total_timesteps=params["total_timesteps"],
         steps_per_iter=params["steps_per_iter"],
-        early_stop_patience=params["early_stop_patience"],
         verbose=verbose,
         results_dir=output_dir,
         experiment_name=f"airl_{layout}_{data_split}",
