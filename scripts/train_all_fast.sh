@@ -1,10 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=overcooked_fast
-#SBATCH --output=logs/train_all_fast_%j.out
-#SBATCH --error=logs/train_all_fast_%j.err
-#SBATCH --time=04:00:00
-#SBATCH --mem=16G
-#SBATCH --cpus-per-task=8
+#SBATCH --time=47:00:00
+#SBATCH --mem=32G
+#SBATCH -n 16
 
 # Fast training version (~2-4 hours total instead of 48+)
 # Uses 1M timesteps and early stopping
@@ -13,8 +11,8 @@
 mkdir -p logs
 
 # Activate conda environment
-source ~/.bashrc
-conda activate overcooked
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 
 # Navigate to project
 cd $SLURM_SUBMIT_DIR/src/human_aware_rl

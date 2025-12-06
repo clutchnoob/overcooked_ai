@@ -1,17 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=ppo_sp
-#SBATCH --output=logs/ppo_sp_%j.out
-#SBATCH --error=logs/ppo_sp_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=47:00:00
 #SBATCH --mem=32G
-#SBATCH --cpus-per-task=8
+#SBATCH -n 16
 
 # Create logs directory
 mkdir -p logs
 
 # Activate conda environment
-source ~/.bashrc
-conda activate overcooked
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 
 # Navigate to project
 cd $SLURM_SUBMIT_DIR/src/human_aware_rl
