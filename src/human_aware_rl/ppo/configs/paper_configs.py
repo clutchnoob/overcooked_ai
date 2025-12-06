@@ -77,7 +77,7 @@ PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
         "vf_coef": 9.95e-3,
         "kl_coeff": 0.197,
         "reward_shaping_horizon": 4.5e6,
-        "num_training_iters": 220,  # Reduced from 550
+        "num_training_iters": 550,  # Paper value
     },
     "asymmetric_advantages": {
         "learning_rate": 2.1e-4,
@@ -88,7 +88,7 @@ PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
         "vf_coef": 0.022,
         "kl_coeff": 0.185,
         "reward_shaping_horizon": 5e6,
-        "num_training_iters": 260,  # Reduced from 650
+        "num_training_iters": 650,  # Paper value
     },
     "coordination_ring": {
         "learning_rate": 1.6e-4,
@@ -99,7 +99,7 @@ PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
         "vf_coef": 9.33e-3,
         "kl_coeff": 0.156,
         "reward_shaping_horizon": 5e6,
-        "num_training_iters": 100,  # Reduced from 650
+        "num_training_iters": 650,  # Paper value
     },
     "forced_coordination": {
         "learning_rate": 2.77e-4,
@@ -110,7 +110,7 @@ PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
         "vf_coef": 0.016,
         "kl_coeff": 0.31,
         "reward_shaping_horizon": 4e6,
-        "num_training_iters": 100,  # Reduced from 650
+        "num_training_iters": 650,  # Paper value
     },
     "counter_circuit": {
         "learning_rate": 2.29e-4,
@@ -121,7 +121,7 @@ PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
         "vf_coef": 9.92e-3,
         "kl_coeff": 0.299,
         "reward_shaping_horizon": 5e6,
-        "num_training_iters": 100,  # Reduced from 650
+        "num_training_iters": 650,  # Paper value
     },
 }
 
