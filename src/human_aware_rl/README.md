@@ -29,11 +29,22 @@ pip install ".[harl-legacy]"
 
 ### Imitation Learning (`imitation/`)
 
-PyTorch-based behavior cloning from human demonstrations:
+PyTorch-based imitation learning from human demonstrations:
 
+**Behavior Cloning (BC):**
 - `behavior_cloning.py`: Main BC module with MLP and LSTM models
 - `bc_agent.py`: Agent wrapper for trained BC models
-- `behavior_cloning_test.py`: Unit tests
+- `train_bc_models.py`: Batch training script for all layouts
+
+**Adversarial Inverse Reinforcement Learning (AIRL):**
+- `airl.py`: AIRL implementation with disentangled reward structure
+- `airl_agent.py`: Agent wrapper for AIRL-trained policies
+- `train_airl.py`: Batch training script for all layouts
+
+AIRL learns a more robust human proxy than BC by:
+- Training a policy via adversarial learning against a discriminator
+- Reducing compounding errors by exploring during training
+- Covering more states than BC's supervised learning approach
 
 ### Reinforcement Learning (`jaxmarl/`)
 
@@ -144,6 +155,28 @@ python -m human_aware_rl.ppo.train_pbt --all_layouts
 python -m human_aware_rl.ppo.train_ppo_bc --all_layouts --seeds 0,10,20,30,40
 ```
 
+### Step 4b (Alternative): Train AIRL Human Proxy
+
+AIRL provides a more robust human proxy than BC:
+
+```bash
+# Train AIRL models (replaces BC)
+python -m human_aware_rl.imitation.train_airl --all_layouts
+
+# Fast training (500K timesteps instead of 5M)
+python -m human_aware_rl.imitation.train_airl --all_layouts --fast
+```
+
+### Step 4c (Alternative): Train PPO with AIRL Partner
+
+```bash
+# Train PPO_AIRL agents (requires AIRL models from Step 4b)
+python -m human_aware_rl.ppo.train_ppo_airl --all_layouts --seeds 0,10,20,30,40
+
+# Fast training
+python -m human_aware_rl.ppo.train_ppo_airl --all_layouts --fast
+```
+
 ### Step 5: Evaluate All Agents
 
 ```bash
@@ -187,10 +220,13 @@ human_aware_rl/
 ├── utils.py
 ├── run_tests.sh
 ├── run_tests_legacy.sh
-├── imitation/              # Behavior Cloning (PyTorch)
-│   ├── behavior_cloning.py
-│   ├── bc_agent.py
-│   ├── train_bc_models.py  # Batch training script
+├── imitation/              # Imitation Learning (PyTorch)
+│   ├── behavior_cloning.py # BC models and training
+│   ├── bc_agent.py         # BC agent wrapper
+│   ├── train_bc_models.py  # BC batch training
+│   ├── airl.py             # AIRL discriminator and trainer
+│   ├── airl_agent.py       # AIRL agent wrapper
+│   ├── train_airl.py       # AIRL batch training
 │   └── behavior_cloning_test.py
 ├── jaxmarl/                # RL Training (JAX)
 │   ├── overcooked_env.py
@@ -203,6 +239,7 @@ human_aware_rl/
 │   ├── ppo_client.py       # General PPO client
 │   ├── train_ppo_sp.py     # Self-play training
 │   ├── train_ppo_bc.py     # PPO with BC partner
+│   ├── train_ppo_airl.py   # PPO with AIRL partner
 │   ├── train_pbt.py        # PBT training
 │   └── configs/
 │       └── paper_configs.py # Paper hyperparameters
