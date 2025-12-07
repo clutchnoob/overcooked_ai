@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=sp_cr_s0
-#SBATCH --output=../logs/ppo_sp_cramped_room_seed0_%j.out
-#SBATCH --error=../logs/ppo_sp_cramped_room_seed0_%j.err
+#SBATCH --job-name=bc_cc_s0
+#SBATCH --output=../logs/ppo_bc_counter_circuit_seed0_%j.out
+#SBATCH --error=../logs/ppo_bc_counter_circuit_seed0_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
@@ -19,5 +19,5 @@ conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 # Navigate to human_aware_rl
 cd src
 
-# Run PPO Self-Play training (FULL PAPER PARAMS - 550 iterations)
-python -m human_aware_rl.ppo.train_ppo_sp --layout cramped_room --seed 0
+# Run PPO with BC partner training (FULL PAPER PARAMS - 650 iterations)
+python -m human_aware_rl.ppo.train_ppo_bc --layout counter_circuit --seed 0

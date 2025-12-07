@@ -36,9 +36,9 @@ for layout in "${LAYOUTS[@]}"; do
 
 cd "\$SLURM_SUBMIT_DIR/../.."
 mkdir -p hpc_scripts/logs
-source ~/.bashrc
-conda activate MAL_env
-cd src/human_aware_rl
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+cd src
 
 python -m human_aware_rl.imitation.train_bc_models --layout ${layout}
 EOF
@@ -61,9 +61,9 @@ for layout in "${LAYOUTS[@]}"; do
 
 cd "\$SLURM_SUBMIT_DIR/../.."
 mkdir -p hpc_scripts/logs
-source ~/.bashrc
-conda activate MAL_env
-cd src/human_aware_rl
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+cd src
 
 # Full paper params: ${iters} iterations
 python -m human_aware_rl.ppo.train_ppo_sp --layout ${layout} --seed ${seed}
@@ -88,9 +88,9 @@ for layout in "${LAYOUTS[@]}"; do
 
 cd "\$SLURM_SUBMIT_DIR/../.."
 mkdir -p hpc_scripts/logs
-source ~/.bashrc
-conda activate MAL_env
-cd src/human_aware_rl
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+cd src
 
 # Full paper params: ${iters} iterations
 python -m human_aware_rl.ppo.train_ppo_bc --layout ${layout} --seed ${seed}
