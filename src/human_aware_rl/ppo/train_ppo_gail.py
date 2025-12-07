@@ -260,44 +260,99 @@ def train_all_layouts(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train PPO with GAIL partner")
-    parser.add_argument("--layout", type=str, help="Layout name")
+    parser = argparse.ArgumentParser(
+        description="Train PPO with GAIL partner (PPO_GAIL)",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--layout", type=str, choices=LAYOUTS, help="Layout name")
     parser.add_argument("--all_layouts", action="store_true", help="Train all layouts")
     parser.add_argument("--seed", type=int, default=0, help="Random seed")
-    parser.add_argument("--seeds", type=str, default="0", 
+    parser.add_argument("--seeds", type=str, default="0,10,20,30,40", 
                         help="Comma-separated list of seeds")
+    parser.add_argument("--results_dir", type=str, default="results/ppo_gail",
+                        help="Directory to save results")
     parser.add_argument("--fast", action="store_true",
                         help="Fast training mode (1M timesteps, early stopping)")
+    parser.add_argument("--local", action="store_true",
+                        help="Local testing mode (10k timesteps)")
     parser.add_argument("--timesteps", type=int, default=None,
                         help="Override total timesteps")
+    parser.add_argument("--num_training_iters", type=int, default=None,
+                        help="Number of training iterations (overrides layout default)")
+    parser.add_argument("--use_early_stopping", action="store_true",
+                        help="Enable early stopping (disabled by default for paper reproduction)")
     parser.add_argument("--patience", type=int, default=100,
-                        help="Early stopping patience")
+                        help="Early stopping patience (if enabled)")
+    parser.add_argument("--quiet", action="store_true", help="Reduce verbosity")
     
     args = parser.parse_args()
     
     # Parse seeds
     seeds = [int(s) for s in args.seeds.split(",")]
+    verbose = not args.quiet
     
-    # Set timesteps
-    if args.fast:
+    # Paper training iterations per layout
+    PAPER_ITERS = {
+        "cramped_room": 550,
+        "asymmetric_advantages": 650,
+        "coordination_ring": 650,
+        "forced_coordination": 650,
+        "counter_circuit": 650,
+    }
+    
+    # Determine settings
+    if args.local:
+        total_timesteps = 10_000
+        early_stop_patience = 10
+        use_early_stopping = True
+    elif args.fast:
         total_timesteps = 1_000_000
-        early_stop_patience = 40
-    else:
-        total_timesteps = args.timesteps
         early_stop_patience = args.patience
+        use_early_stopping = True
+    else:
+        # Paper reproduction mode - use full iterations, no early stopping
+        total_timesteps = None  # Will be set per layout
+        early_stop_patience = args.patience
+        use_early_stopping = args.use_early_stopping
+    
+    # Override with explicit args
+    if args.timesteps:
+        total_timesteps = args.timesteps
+    if args.num_training_iters:
+        total_timesteps = args.num_training_iters * 12000
     
     if args.all_layouts:
-        train_all_layouts(
-            seeds=seeds,
-            total_timesteps=total_timesteps,
-            early_stop_patience=early_stop_patience,
-        )
+        for layout in LAYOUTS:
+            # Set layout-specific timesteps if not overridden
+            layout_timesteps = total_timesteps
+            if layout_timesteps is None:
+                layout_timesteps = PAPER_ITERS[layout] * 12000
+            
+            for seed in seeds:
+                print(f"\n{'='*60}")
+                print(f"Training PPO_GAIL: {layout} seed {seed}")
+                print(f"Timesteps: {layout_timesteps:,}")
+                print(f"{'='*60}")
+                
+                train_ppo_gail(
+                    layout=layout,
+                    seed=seed,
+                    total_timesteps=layout_timesteps,
+                    early_stop_patience=early_stop_patience,
+                    verbose=verbose,
+                )
     elif args.layout:
+        # Set layout-specific timesteps if not overridden
+        layout_timesteps = total_timesteps
+        if layout_timesteps is None:
+            layout_timesteps = PAPER_ITERS[args.layout] * 12000
+        
         train_ppo_gail(
             layout=args.layout,
             seed=args.seed,
-            total_timesteps=total_timesteps,
+            total_timesteps=layout_timesteps,
             early_stop_patience=early_stop_patience,
+            verbose=verbose,
         )
     else:
         print("Please specify --layout or --all_layouts")

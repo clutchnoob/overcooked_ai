@@ -93,7 +93,8 @@ class PPOConfig:
     eval_num_games: int = 5
     verbose: bool = True
     
-    # Early stopping
+    # Early stopping (disabled by default for paper reproduction)
+    use_early_stopping: bool = False  # Set True only for fast/debug mode
     early_stop_patience: int = 100  # Stop if no significant improvement for this many updates
     early_stop_min_reward: float = float('inf')  # Minimum reward threshold (disabled by default)
     
@@ -474,7 +475,10 @@ class PPOTrainer:
             print(f"Layout: {self.config.layout_name}")
             print(f"Num envs: {self.config.num_envs}, Num steps: {self.config.num_steps}")
             print(f"Batch size: {self.config.num_envs * self.config.num_steps}")
-            print(f"Early stop patience: {self.config.early_stop_patience} updates")
+            if self.config.use_early_stopping:
+                print(f"Early stopping: ENABLED (patience={self.config.early_stop_patience} updates)")
+            else:
+                print(f"Early stopping: DISABLED (paper reproduction mode)")
         
         start_time = time.time()
         
@@ -549,7 +553,7 @@ class PPOTrainer:
                 else:
                     no_improvement_count += 1
                 
-                if no_improvement_count >= self.config.early_stop_patience:
+                if self.config.use_early_stopping and no_improvement_count >= self.config.early_stop_patience:
                     if self.config.verbose:
                         print(f"\nEarly stopping: No significant improvement for {self.config.early_stop_patience} updates")
                         print(f"Best mean reward: {best_mean_reward:.2f}, Current: {mean_reward:.2f}")

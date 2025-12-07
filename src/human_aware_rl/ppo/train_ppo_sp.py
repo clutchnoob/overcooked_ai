@@ -330,6 +330,19 @@ def main():
         help="Override total timesteps (e.g., 500000 for 500k)"
     )
     
+    parser.add_argument(
+        "--num_training_iters",
+        type=int,
+        default=None,
+        help="Number of training iterations (overrides layout default)"
+    )
+    
+    parser.add_argument(
+        "--use_early_stopping",
+        action="store_true",
+        help="Enable early stopping (disabled by default for paper reproduction)"
+    )
+    
     args = parser.parse_args()
     
     verbose = not args.quiet
@@ -343,12 +356,14 @@ def main():
         local_overrides = {
             "total_timesteps": 10000,
             "num_workers": 4,
+            "use_early_stopping": True,
             "early_stop_patience": 10,
         }
     elif args.fast:
         local_overrides = {
             "total_timesteps": 1000000,  # 1M instead of 6.6M
             "num_workers": 32,
+            "use_early_stopping": True,
             "early_stop_patience": 100,  # More patience for variance
             "save_interval": 25,
             "log_interval": 1,
@@ -356,6 +371,13 @@ def main():
     
     if args.timesteps:
         local_overrides["total_timesteps"] = args.timesteps
+    
+    if args.num_training_iters:
+        # Convert iterations to timesteps (each iter = 12000 timesteps from paper)
+        local_overrides["total_timesteps"] = args.num_training_iters * 12000
+    
+    if args.use_early_stopping:
+        local_overrides["use_early_stopping"] = True
     
     if args.layout:
         # Train single layout

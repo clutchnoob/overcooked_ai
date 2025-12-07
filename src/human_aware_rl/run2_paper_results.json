@@ -1,0 +1,222 @@
+{
+  "cramped_room": {
+    "sp_sp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "sp_hp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "sp_hp_swapped": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "ppo_bc_hp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "ppo_bc_hp_swapped": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "bc_hp": {
+      "mean": 60.0,
+      "std": 27.325202042558928,
+      "se": 7.055336829505574,
+      "n": 15
+    },
+    "bc_hp_swapped": {
+      "mean": 64.0,
+      "std": 19.595917942265423,
+      "se": 5.059644256269406,
+      "n": 15
+    }
+  },
+  "asymmetric_advantages": {
+    "sp_sp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "sp_hp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "sp_hp_swapped": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "ppo_bc_hp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "ppo_bc_hp_swapped": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "bc_hp": {
+      "mean": 80.0,
+      "std": 40.0,
+      "se": 10.327955589886445,
+      "n": 15
+    },
+    "bc_hp_swapped": {
+      "mean": 94.66666666666667,
+      "std": 33.83620677453206,
+      "se": 8.736471022439549,
+      "n": 15
+    }
+  },
+  "coordination_ring": {
+    "sp_sp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "sp_hp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "sp_hp_swapped": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "ppo_bc_hp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "ppo_bc_hp_swapped": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "bc_hp": {
+      "mean": 25.333333333333332,
+      "std": 19.955506062794356,
+      "se": 5.152489509756245,
+      "n": 15
+    },
+    "bc_hp_swapped": {
+      "mean": 34.666666666666664,
+      "std": 17.074997966487594,
+      "se": 4.408745517382131,
+      "n": 15
+    }
+  },
+  "forced_coordination": {
+    "sp_sp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "sp_hp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "sp_hp_swapped": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "ppo_bc_hp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "ppo_bc_hp_swapped": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "bc_hp": {
+      "mean": 6.666666666666667,
+      "std": 9.428090415820632,
+      "se": 2.434322477800738,
+      "n": 15
+    },
+    "bc_hp_swapped": {
+      "mean": 13.333333333333334,
+      "std": 17.38453974720706,
+      "se": 4.488668861494256,
+      "n": 15
+    }
+  },
+  "counter_circuit": {
+    "sp_sp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "sp_hp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "sp_hp_swapped": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "ppo_bc_hp": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "ppo_bc_hp_swapped": {
+      "mean": 0,
+      "std": 0,
+      "se": 0,
+      "n": 0
+    },
+    "bc_hp": {
+      "mean": 14.666666666666666,
+      "std": 13.597385369580758,
+      "se": 3.510829805890044,
+      "n": 15
+    },
+    "bc_hp_swapped": {
+      "mean": 24.0,
+      "std": 14.966629547095765,
+      "se": 3.8643671323171835,
+      "n": 15
+    }
+  }
+}
