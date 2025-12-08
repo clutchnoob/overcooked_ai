@@ -13,11 +13,13 @@ hpc_scripts/
 ├── run_2/                    # Completed run
 │   ├── README.md             # Run overview and diff from previous
 │   ├── Run_2_Results.md      # Detailed results
+│   ├── upload_to_dropbox.sh  # Dropbox upload script
 │   ├── scripts/              # SLURM scripts used
 │   └── logs/                 # Training logs
 ├── run_3/                    # Completed run
 │   ├── README.md
 │   ├── Run_3_Results.md
+│   ├── upload_to_dropbox.sh
 │   ├── scripts/
 │   └── logs/
 └── run_N/                    # Future runs...
@@ -102,11 +104,29 @@ From "On the Utility of Learning about Humans for Human-AI Coordination":
 
 Each iteration = 12,000 timesteps. Seeds: 0, 10, 20, 30, 40.
 
-## Dropbox Backups
+## Uploading Results to Dropbox
 
-Results are backed up to Dropbox after each run:
+Each run directory contains an `upload_to_dropbox.sh` script to backup results:
+
+```bash
+# Activate Dropbox CLI environment
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om2/user/mabdel03/conda_envs/dropbox_cli
+
+# Upload a specific run
+cd run_N
+./upload_to_dropbox.sh
+```
+
+The script uploads:
+- Training logs (`.out`, `.err` files)
+- Documentation (`README.md`, `Run_N_Results.md`)
+- Model weights (BC, GAIL, PPO_SP, PPO_BC, PPO_GAIL)
+
+Results are backed up to Dropbox:
 ```
 All files/Mahmoud Abdelmoneum/6.S890/Test_Runs/
 ├── Run_2/
-└── Run_3/
+├── Run_3/
+└── Run_N/
 ```

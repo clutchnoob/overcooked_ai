@@ -11,6 +11,7 @@ Run 2 was the first systematic paper reproduction attempt, training BC, GAIL, PP
 
 - `scripts/` - SLURM batch scripts used for training
 - `logs/` - Training output and error logs
+- `upload_to_dropbox.sh` - Script to upload results to Dropbox
 - [Run_2_Results.md](Run_2_Results.md) - Detailed results and metrics
 
 ## Training Jobs
@@ -56,6 +57,19 @@ src/results/
 - PPO_GAIL was NOT included in Run 2
 - GAIL models showed moderate performance
 - PPO_BC outperformed PPO_SP on harder layouts
+
+## Uploading Results to Dropbox
+
+```bash
+# Activate Dropbox CLI environment
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om2/user/mabdel03/conda_envs/dropbox_cli
+
+# Run upload script
+./upload_to_dropbox.sh
+```
+
+Results uploaded to: `All files/Mahmoud Abdelmoneum/6.S890/Test_Runs/Run_2/`
 
 ## Results
 

@@ -11,6 +11,7 @@ Run 3 was the first **complete** paper reproduction, adding PPO_GAIL training (P
 
 - `scripts/` - SLURM batch scripts used for training
 - `logs/` - Training output and error logs
+- `upload_to_dropbox.sh` - Script to upload results to Dropbox
 - [Run_3_Results.md](Run_3_Results.md) - Detailed results and metrics
 
 ## Training Jobs
@@ -65,12 +66,18 @@ src/results/
 └── ppo_bc_run3/
 ```
 
-## Dropbox Backup
+## Uploading Results to Dropbox
 
-Results uploaded to:
+```bash
+# Activate Dropbox CLI environment
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om2/user/mabdel03/conda_envs/dropbox_cli
+
+# Run upload script
+./upload_to_dropbox.sh
 ```
-All files/Mahmoud Abdelmoneum/6.S890/Test_Runs/Run_3/
-```
+
+Results uploaded to: `All files/Mahmoud Abdelmoneum/6.S890/Test_Runs/Run_3/`
 
 ## Results
 
