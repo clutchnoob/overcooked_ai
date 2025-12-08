@@ -1,18 +1,28 @@
 #!/bin/bash
-#SBATCH -n 16
-#SBATCH -t 47:00:00
+#SBATCH --job-name=gail_forced_coordination
+#SBATCH --output=logs/gail_forced_coordination_%j.out
+#SBATCH --error=logs/gail_forced_coordination_%j.err
+#SBATCH --time=08:00:00
 #SBATCH --mem=32G
-#SBATCH --job-name=gail_forced
-#SBATCH --output=logs/gail_forced_%j.out
-#SBATCH --error=logs/gail_forced_%j.err
+#SBATCH --cpus-per-task=8
 
+# GAIL Training for forced_coordination
+
+# Navigate to project root
+cd "$SLURM_SUBMIT_DIR/.."
+
+# Create logs directory
+mkdir -p "$SLURM_SUBMIT_DIR/logs"
+
+# Activate conda environment
 source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
 conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 
-# Navigate to project directory (SLURM_SUBMIT_DIR is where sbatch was called)
-cd "$SLURM_SUBMIT_DIR/.."
+# Navigate to src for Python modules
 cd src
 
-mkdir -p "$SLURM_SUBMIT_DIR/logs"
+echo "Training GAIL model for forced_coordination..."
 
 python -m human_aware_rl.imitation.gail --layout forced_coordination
+
+echo "GAIL training complete for forced_coordination"

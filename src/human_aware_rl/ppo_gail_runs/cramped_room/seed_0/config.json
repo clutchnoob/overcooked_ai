@@ -3,7 +3,7 @@
   "horizon": 400,
   "num_envs": 32,
   "old_dynamics": true,
-  "total_timesteps": 100000,
+  "total_timesteps": 6600000,
   "learning_rate": 0.000163,
   "num_steps": 400,
   "num_minibatches": 10,
@@ -36,6 +36,6 @@
       0.0
     ]
   ],
-  "early_stop_patience": 10,
+  "early_stop_patience": 100,
   "seed": 0
 }

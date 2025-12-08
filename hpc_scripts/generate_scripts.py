@@ -53,24 +53,23 @@ def create_bc_script(layout: str) -> str:
 # BC Training for {layout}
 # Trains both train (for PPO partner) and test (for Human Proxy) models
 
+# Navigate to project root
 cd "$SLURM_SUBMIT_DIR/.."
-source .venv/bin/activate || conda activate overcooked
 
+# Create logs directory
 mkdir -p "$SLURM_SUBMIT_DIR/logs"
+
+# Activate conda environment
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+
+# Navigate to src for Python modules
+cd src
 
 echo "Training BC models for {layout}..."
 
-# Train BC on training data (for PPO_BC partner)
-python -m human_aware_rl.imitation.behavior_cloning \\
-    --layout {layout} \\
-    --data_type train \\
-    --epochs 100
-
-# Train BC on test data (for Human Proxy evaluation)
-python -m human_aware_rl.imitation.behavior_cloning \\
-    --layout {layout} \\
-    --data_type test \\
-    --epochs 100
+# Train BC models (both train and test)
+python -m human_aware_rl.imitation.train_bc_models --layout {layout}
 
 echo "BC training complete for {layout}"
 '''
@@ -83,21 +82,27 @@ def create_gail_script(layout: str) -> str:
 #SBATCH --output=logs/gail_{layout}_%j.out
 #SBATCH --error=logs/gail_{layout}_%j.err
 #SBATCH --time=08:00:00
-#SBATCH --mem=16G
-#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --cpus-per-task=8
 
 # GAIL Training for {layout}
 
+# Navigate to project root
 cd "$SLURM_SUBMIT_DIR/.."
-source .venv/bin/activate || conda activate overcooked
 
+# Create logs directory
 mkdir -p "$SLURM_SUBMIT_DIR/logs"
+
+# Activate conda environment
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+
+# Navigate to src for Python modules
+cd src
 
 echo "Training GAIL model for {layout}..."
 
-python -m human_aware_rl.imitation.gail \\
-    --layout {layout} \\
-    --epochs 200
+python -m human_aware_rl.imitation.gail --layout {layout}
 
 echo "GAIL training complete for {layout}"
 '''
@@ -118,19 +123,23 @@ def create_ppo_sp_script(layout: str, seed: int) -> str:
 # Layout: {layout}, Seed: {seed}
 # Training iterations: {iters} (paper value)
 
+# Navigate to project root
 cd "$SLURM_SUBMIT_DIR/.."
-source .venv/bin/activate || conda activate overcooked
 
+# Create logs directory
 mkdir -p "$SLURM_SUBMIT_DIR/logs"
+
+# Activate conda environment
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+
+# Navigate to src for Python modules
+cd src
 
 echo "Training PPO_SP for {layout} seed {seed}..."
 echo "Paper iterations: {iters}"
 
-python -m human_aware_rl.ppo.train_ppo_sp \\
-    --layout {layout} \\
-    --seed {seed} \\
-    --num_training_iters {iters} \\
-    --results_dir results/ppo_sp
+python -m human_aware_rl.ppo.train_ppo_sp --layout {layout} --seed {seed}
 
 echo "PPO_SP training complete for {layout} seed {seed}"
 '''
@@ -151,20 +160,23 @@ def create_ppo_bc_script(layout: str, seed: int) -> str:
 # Layout: {layout}, Seed: {seed}
 # Training iterations: {iters} (paper value)
 
+# Navigate to project root
 cd "$SLURM_SUBMIT_DIR/.."
-source .venv/bin/activate || conda activate overcooked
 
+# Create logs directory
 mkdir -p "$SLURM_SUBMIT_DIR/logs"
+
+# Activate conda environment
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+
+# Navigate to src for Python modules
+cd src
 
 echo "Training PPO_BC for {layout} seed {seed}..."
 echo "Paper iterations: {iters}"
 
-python -m human_aware_rl.ppo.train_ppo_bc \\
-    --layout {layout} \\
-    --seed {seed} \\
-    --num_training_iters {iters} \\
-    --use_default_bc_models \\
-    --results_dir results/ppo_bc
+python -m human_aware_rl.ppo.train_ppo_bc --layout {layout} --seed {seed}
 
 echo "PPO_BC training complete for {layout} seed {seed}"
 '''
@@ -185,19 +197,23 @@ def create_ppo_gail_script(layout: str, seed: int) -> str:
 # Layout: {layout}, Seed: {seed}
 # Training iterations: {iters} (paper value)
 
+# Navigate to project root
 cd "$SLURM_SUBMIT_DIR/.."
-source .venv/bin/activate || conda activate overcooked
 
+# Create logs directory
 mkdir -p "$SLURM_SUBMIT_DIR/logs"
+
+# Activate conda environment
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+
+# Navigate to src for Python modules
+cd src
 
 echo "Training PPO_GAIL for {layout} seed {seed}..."
 echo "Paper iterations: {iters}"
 
-python -m human_aware_rl.ppo.train_ppo_gail \\
-    --layout {layout} \\
-    --seed {seed} \\
-    --num_training_iters {iters} \\
-    --results_dir results/ppo_gail
+python -m human_aware_rl.ppo.train_ppo_gail --layout {layout} --seed {seed}
 
 echo "PPO_GAIL training complete for {layout} seed {seed}"
 '''

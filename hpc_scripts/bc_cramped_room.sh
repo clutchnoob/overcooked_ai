@@ -9,23 +9,22 @@
 # BC Training for cramped_room
 # Trains both train (for PPO partner) and test (for Human Proxy) models
 
+# Navigate to project root
 cd "$SLURM_SUBMIT_DIR/.."
-source .venv/bin/activate || conda activate overcooked
 
+# Create logs directory
 mkdir -p "$SLURM_SUBMIT_DIR/logs"
+
+# Activate conda environment
+source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+
+# Navigate to src for Python modules
+cd src
 
 echo "Training BC models for cramped_room..."
 
-# Train BC on training data (for PPO_BC partner)
-python -m human_aware_rl.imitation.behavior_cloning \
-    --layout cramped_room \
-    --data_type train \
-    --epochs 100
-
-# Train BC on test data (for Human Proxy evaluation)
-python -m human_aware_rl.imitation.behavior_cloning \
-    --layout cramped_room \
-    --data_type test \
-    --epochs 100
+# Train BC models (both train and test)
+python -m human_aware_rl.imitation.train_bc_models --layout cramped_room
 
 echo "BC training complete for cramped_room"
