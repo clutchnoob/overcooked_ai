@@ -10,13 +10,15 @@ This script generates batch scripts for:
 - PPO_GAIL training (per layout, per seed)
 
 Usage:
-    python generate_scripts.py --run N
+    python generate_scripts.py --run N [--fast]
 
 Where N is the run number (e.g., 4 for run_4/).
 Scripts are output to hpc_scripts/run_N/scripts/ with logs in run_N/logs/.
 Model outputs are saved to versioned directories (e.g., bc_runs_runN/).
 
-The generated scripts use paper hyperparameters by default.
+Options:
+    --fast: Use fast training mode (~1M timesteps with early stopping, shorter time limits)
+    Default: Full paper hyperparameters (550-650 iterations, no early stopping)
 """
 
 import argparse
@@ -34,7 +36,7 @@ LAYOUTS = [
 
 SEEDS = [0, 10, 20, 30, 40]
 
-# Paper training iterations
+# Paper training iterations (full mode)
 PAPER_ITERS = {
     "cramped_room": 550,
     "asymmetric_advantages": 650,
@@ -43,21 +45,28 @@ PAPER_ITERS = {
     "counter_circuit": 650,
 }
 
+# Fast training settings
+FAST_TIMESTEPS = 1_000_000  # 1M timesteps
+FAST_PATIENCE = 40  # Early stopping patience
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def create_bc_script(layout: str, run: int) -> str:
+def create_bc_script(layout: str, run: int, fast: bool = False) -> str:
     """Create BC training script for a layout (trains both train and test)."""
+    time_limit = "02:00:00" if fast else "04:00:00"
+    mode_str = "FAST MODE" if fast else "Full Training"
+    
     return f'''#!/bin/bash
 #SBATCH --job-name=bc_{layout}
 #SBATCH --output=../logs/bc_{layout}_%j.out
 #SBATCH --error=../logs/bc_{layout}_%j.err
-#SBATCH --time=04:00:00
+#SBATCH --time={time_limit}
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=4
 
 # BC Training for {layout}
-# Run: {run}
+# Run: {run} ({mode_str})
 # Trains both train (for PPO partner) and test (for Human Proxy) models
 
 # Navigate to project root (scripts/ -> run_N/ -> hpc_scripts/ -> project root)
@@ -73,7 +82,7 @@ conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 # Navigate to src for Python modules
 cd src
 
-echo "Run {run}: Training BC models for {layout}..."
+echo "Run {run}: Training BC models for {layout} ({mode_str})..."
 
 # Train BC models (both train and test) - outputs to bc_runs_run{run}/
 # Note: BC trains both train and test splits; PPO_BC uses train/{layout}/
@@ -83,18 +92,21 @@ echo "BC training complete for {layout}"
 '''
 
 
-def create_gail_script(layout: str, run: int) -> str:
+def create_gail_script(layout: str, run: int, fast: bool = False) -> str:
     """Create GAIL training script for a layout."""
+    time_limit = "04:00:00" if fast else "08:00:00"
+    mode_str = "FAST MODE" if fast else "Full Training"
+    
     return f'''#!/bin/bash
 #SBATCH --job-name=gail_{layout}
 #SBATCH --output=../logs/gail_{layout}_%j.out
 #SBATCH --error=../logs/gail_{layout}_%j.err
-#SBATCH --time=08:00:00
+#SBATCH --time={time_limit}
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
 
 # GAIL Training for {layout}
-# Run: {run}
+# Run: {run} ({mode_str})
 
 # Navigate to project root
 cd "$SLURM_SUBMIT_DIR/../../.."
@@ -109,7 +121,7 @@ conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 # Navigate to src for Python modules
 cd src
 
-echo "Run {run}: Training GAIL model for {layout}..."
+echo "Run {run}: Training GAIL model for {layout} ({mode_str})..."
 
 python -m human_aware_rl.imitation.gail --layout {layout} --results_dir human_aware_rl/gail_runs_run{run}
 
@@ -117,21 +129,31 @@ echo "GAIL training complete for {layout}"
 '''
 
 
-def create_ppo_sp_script(layout: str, seed: int, run: int) -> str:
+def create_ppo_sp_script(layout: str, seed: int, run: int, fast: bool = False) -> str:
     """Create PPO Self-Play training script."""
     iters = PAPER_ITERS[layout]
+    
+    if fast:
+        time_limit = "06:00:00"
+        mode_str = "FAST MODE (~1M timesteps, early stopping)"
+        train_cmd = f"python -m human_aware_rl.ppo.train_ppo_sp --layout {layout} --seed {seed} --results_dir results/ppo_sp_run{run} --fast"
+    else:
+        time_limit = "24:00:00"
+        mode_str = f"Full Training ({iters} iterations)"
+        train_cmd = f"python -m human_aware_rl.ppo.train_ppo_sp --layout {layout} --seed {seed} --results_dir results/ppo_sp_run{run}"
+    
     return f'''#!/bin/bash
 #SBATCH --job-name=ppo_sp_{layout}_s{seed}
 #SBATCH --output=../logs/ppo_sp_{layout}_seed{seed}_%j.out
 #SBATCH --error=../logs/ppo_sp_{layout}_seed{seed}_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time={time_limit}
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
 
 # PPO Self-Play Training
 # Run: {run}
 # Layout: {layout}, Seed: {seed}
-# Training iterations: {iters} (paper value)
+# Mode: {mode_str}
 
 # Navigate to project root
 cd "$SLURM_SUBMIT_DIR/../../.."
@@ -147,29 +169,39 @@ conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 cd src
 
 echo "Run {run}: Training PPO_SP for {layout} seed {seed}..."
-echo "Paper iterations: {iters}"
+echo "Mode: {mode_str}"
 
-python -m human_aware_rl.ppo.train_ppo_sp --layout {layout} --seed {seed} --results_dir results/ppo_sp_run{run}
+{train_cmd}
 
 echo "PPO_SP training complete for {layout} seed {seed}"
 '''
 
 
-def create_ppo_bc_script(layout: str, seed: int, run: int) -> str:
+def create_ppo_bc_script(layout: str, seed: int, run: int, fast: bool = False) -> str:
     """Create PPO_BC training script."""
     iters = PAPER_ITERS[layout]
+    
+    if fast:
+        time_limit = "06:00:00"
+        mode_str = "FAST MODE (~1M timesteps, early stopping)"
+        train_cmd = f"python -m human_aware_rl.ppo.train_ppo_bc --layout {layout} --seed {seed} --bc_model_base_dir human_aware_rl/bc_runs_run{run}/train --results_dir results/ppo_bc_run{run} --fast"
+    else:
+        time_limit = "24:00:00"
+        mode_str = f"Full Training ({iters} iterations)"
+        train_cmd = f"python -m human_aware_rl.ppo.train_ppo_bc --layout {layout} --seed {seed} --bc_model_base_dir human_aware_rl/bc_runs_run{run}/train --results_dir results/ppo_bc_run{run}"
+    
     return f'''#!/bin/bash
 #SBATCH --job-name=ppo_bc_{layout}_s{seed}
 #SBATCH --output=../logs/ppo_bc_{layout}_seed{seed}_%j.out
 #SBATCH --error=../logs/ppo_bc_{layout}_seed{seed}_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time={time_limit}
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
 
 # PPO_BC Training (PPO with BC partner)
 # Run: {run}
 # Layout: {layout}, Seed: {seed}
-# Training iterations: {iters} (paper value)
+# Mode: {mode_str}
 
 # Navigate to project root
 cd "$SLURM_SUBMIT_DIR/../../.."
@@ -185,30 +217,40 @@ conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 cd src
 
 echo "Run {run}: Training PPO_BC for {layout} seed {seed}..."
-echo "Paper iterations: {iters}"
+echo "Mode: {mode_str}"
 
 # Uses BC models from bc_runs_run{run}/train/{layout}/
-python -m human_aware_rl.ppo.train_ppo_bc --layout {layout} --seed {seed} --bc_model_base_dir human_aware_rl/bc_runs_run{run}/train --results_dir results/ppo_bc_run{run}
+{train_cmd}
 
 echo "PPO_BC training complete for {layout} seed {seed}"
 '''
 
 
-def create_ppo_gail_script(layout: str, seed: int, run: int) -> str:
+def create_ppo_gail_script(layout: str, seed: int, run: int, fast: bool = False) -> str:
     """Create PPO_GAIL training script (PPO with GAIL partner)."""
     iters = PAPER_ITERS[layout]
+    
+    if fast:
+        time_limit = "06:00:00"
+        mode_str = "FAST MODE (~1M timesteps, early stopping)"
+        train_cmd = f"python -m human_aware_rl.ppo.train_ppo_gail --layout {layout} --seed {seed} --gail_model_base_dir human_aware_rl/gail_runs_run{run} --results_dir results/ppo_gail_run{run} --fast"
+    else:
+        time_limit = "24:00:00"
+        mode_str = f"Full Training ({iters} iterations)"
+        train_cmd = f"python -m human_aware_rl.ppo.train_ppo_gail --layout {layout} --seed {seed} --gail_model_base_dir human_aware_rl/gail_runs_run{run} --results_dir results/ppo_gail_run{run}"
+    
     return f'''#!/bin/bash
 #SBATCH --job-name=ppo_gail_{layout}_s{seed}
 #SBATCH --output=../logs/ppo_gail_{layout}_seed{seed}_%j.out
 #SBATCH --error=../logs/ppo_gail_{layout}_seed{seed}_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time={time_limit}
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
 
 # PPO_GAIL Training (PPO with GAIL partner instead of BC)
 # Run: {run}
 # Layout: {layout}, Seed: {seed}
-# Training iterations: {iters} (paper value)
+# Mode: {mode_str}
 
 # Navigate to project root
 cd "$SLURM_SUBMIT_DIR/../../.."
@@ -224,10 +266,10 @@ conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 cd src
 
 echo "Run {run}: Training PPO_GAIL for {layout} seed {seed}..."
-echo "Paper iterations: {iters}"
+echo "Mode: {mode_str}"
 
 # Uses GAIL models from gail_runs_run{run}/{layout}/
-python -m human_aware_rl.ppo.train_ppo_gail --layout {layout} --seed {seed} --gail_model_base_dir human_aware_rl/gail_runs_run{run} --results_dir results/ppo_gail_run{run}
+{train_cmd}
 
 echo "PPO_GAIL training complete for {layout} seed {seed}"
 '''
@@ -423,9 +465,10 @@ echo "=========================================="
 '''
 
 
-def create_run_readme(run: int, prev_run: int | None) -> str:
+def create_run_readme(run: int, prev_run: int | None, fast: bool = False) -> str:
     """Create README.md for a run directory."""
     date = datetime.now().strftime("%B %d, %Y")
+    mode_str = "Fast Training (~1M timesteps)" if fast else "Full Paper Training"
     
     diff_section = ""
     if prev_run:
@@ -441,7 +484,26 @@ def create_run_readme(run: int, prev_run: int | None) -> str:
 
 """
     
+    training_mode_section = ""
+    if fast:
+        training_mode_section = """
+## Training Mode: FAST
+
+This run uses **fast training mode**:
+- PPO training: ~1M timesteps with early stopping (patience=40)
+- Reduced SLURM time limits (6h instead of 24h for PPO)
+- Good for quick iteration and debugging
+
+To generate full paper training scripts, re-run without `--fast`:
+```bash
+python generate_scripts.py --run N
+```
+
+"""
+    
     return f'''# Run {run}
+
+**Mode:** {mode_str}
 
 **Date:** {date}  
 **Status:** Pending
@@ -467,8 +529,7 @@ This directory contains all scripts and logs for Run {run} of the Overcooked-AI 
 | PPO_BC | 25 | PPO with BC partner (5 layouts x 5 seeds) |
 | PPO_GAIL | 25 | PPO with GAIL partner (5 layouts x 5 seeds) |
 | **Total** | **85** | |
-{diff_section}
-## Model Output Locations
+{diff_section}{training_mode_section}## Model Output Locations
 
 Models are saved to versioned directories in `src/`:
 
@@ -540,9 +601,11 @@ def main():
     """Generate all HPC scripts for a specific run."""
     parser = argparse.ArgumentParser(description="Generate HPC SLURM scripts for training")
     parser.add_argument("--run", type=int, required=True, help="Run number (e.g., 4 for run_4/)")
+    parser.add_argument("--fast", action="store_true", help="Use fast training mode (~1M timesteps with early stopping)")
     args = parser.parse_args()
     
     run = args.run
+    fast = args.fast
     prev_run = run - 1 if run > 1 else None
     
     # Create run directory structure
@@ -560,15 +623,18 @@ def main():
     ppo_bc_scripts = []
     ppo_gail_scripts = []
     
-    print(f"Generating HPC scripts for Run {run}...")
+    mode_str = "FAST MODE" if fast else "Full Paper Training"
+    print(f"Generating HPC scripts for Run {run} ({mode_str})...")
     print(f"Output directory: {run_dir}")
+    if fast:
+        print(f"Fast mode: ~1M timesteps, early stopping, reduced time limits")
     print()
     
     # BC scripts (one per layout)
     print("BC scripts (1 per layout, trains train+test):")
     for layout in LAYOUTS:
         filename = f"bc_{layout}.sh"
-        write_script(os.path.join(scripts_dir, filename), create_bc_script(layout, run))
+        write_script(os.path.join(scripts_dir, filename), create_bc_script(layout, run, fast))
         bc_scripts.append(filename)
         print(f"  {filename}")
     print()
@@ -577,7 +643,7 @@ def main():
     print("GAIL scripts (1 per layout):")
     for layout in LAYOUTS:
         filename = f"gail_{layout}.sh"
-        write_script(os.path.join(scripts_dir, filename), create_gail_script(layout, run))
+        write_script(os.path.join(scripts_dir, filename), create_gail_script(layout, run, fast))
         gail_scripts.append(filename)
         print(f"  {filename}")
     print()
@@ -587,7 +653,7 @@ def main():
     for layout in LAYOUTS:
         for seed in SEEDS:
             filename = f"ppo_sp_{layout}_seed{seed}.sh"
-            write_script(os.path.join(scripts_dir, filename), create_ppo_sp_script(layout, seed, run))
+            write_script(os.path.join(scripts_dir, filename), create_ppo_sp_script(layout, seed, run, fast))
             ppo_sp_scripts.append(filename)
     print(f"  Created {len(ppo_sp_scripts)} scripts")
     print()
@@ -597,7 +663,7 @@ def main():
     for layout in LAYOUTS:
         for seed in SEEDS:
             filename = f"ppo_bc_{layout}_seed{seed}.sh"
-            write_script(os.path.join(scripts_dir, filename), create_ppo_bc_script(layout, seed, run))
+            write_script(os.path.join(scripts_dir, filename), create_ppo_bc_script(layout, seed, run, fast))
             ppo_bc_scripts.append(filename)
     print(f"  Created {len(ppo_bc_scripts)} scripts")
     print()
@@ -607,7 +673,7 @@ def main():
     for layout in LAYOUTS:
         for seed in SEEDS:
             filename = f"ppo_gail_{layout}_seed{seed}.sh"
-            write_script(os.path.join(scripts_dir, filename), create_ppo_gail_script(layout, seed, run))
+            write_script(os.path.join(scripts_dir, filename), create_ppo_gail_script(layout, seed, run, fast))
             ppo_gail_scripts.append(filename)
     print(f"  Created {len(ppo_gail_scripts)} scripts")
     print()
@@ -628,7 +694,7 @@ def main():
     
     # Create run README
     readme_path = os.path.join(run_dir, "README.md")
-    write_file(readme_path, create_run_readme(run, prev_run))
+    write_file(readme_path, create_run_readme(run, prev_run, fast))
     print(f"Created: {readme_path}")
     
     # Create upload script
