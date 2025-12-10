@@ -177,23 +177,6 @@ if [ -d "$PPO_GAIL_ALT_DIR" ]; then
         done
     done
 fi
-
-# Also check for ppo_gail_runs (without run suffix) as fallback
-PPO_GAIL_FALLBACK_DIR="$SRC_DIR/human_aware_rl/ppo_gail_runs"
-if [ -d "$PPO_GAIL_FALLBACK_DIR" ]; then
-    echo "  Also checking fallback location: $PPO_GAIL_FALLBACK_DIR"
-    for layout_dir in "$PPO_GAIL_FALLBACK_DIR"/*/; do
-        layout=$(basename "$layout_dir")
-        for seed_dir in "$layout_dir"/*/; do
-            seed=$(basename "$seed_dir")
-            dbxcli mkdir "$DROPBOX_RUN_DIR/models/ppo_gail/$layout/$seed" 2>/dev/null || true
-            for f in "$seed_dir"/*; do
-                [ -f "$f" ] && dbxcli put "$f" "$DROPBOX_RUN_DIR/models/ppo_gail/$layout/$seed/$(basename "$f")" 2>/dev/null
-            done
-            echo "  Uploaded: ppo_gail/$layout/$seed"
-        done
-    done
-fi
 echo ""
 
 echo "=========================================="

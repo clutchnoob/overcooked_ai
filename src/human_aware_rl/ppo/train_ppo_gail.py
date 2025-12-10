@@ -41,6 +41,8 @@ def train_ppo_gail(
     total_timesteps: Optional[int] = None,
     early_stop_patience: int = 100,
     gail_model_dir: Optional[str] = None,
+    results_dir: str = "results/ppo_gail",
+    run_suffix: Optional[str] = None,
     verbose: bool = True,
 ):
     """
@@ -52,6 +54,8 @@ def train_ppo_gail(
         total_timesteps: Override total timesteps (None uses paper config)
         early_stop_patience: Updates without improvement before stopping
         gail_model_dir: Path to GAIL model directory
+        results_dir: Directory to save PPO checkpoints (e.g., results/ppo_gail_run4)
+        run_suffix: Suffix for final model save dir (e.g., "run4" for ppo_gail_runs_run4)
         verbose: Print training progress
     """
     import torch
@@ -67,6 +71,9 @@ def train_ppo_gail(
     env_layout = LAYOUT_TO_ENV.get(layout, layout)
     
     # Build config directly for JAX PPOConfig
+    # CRITICAL: Set unique experiment_name and results_dir to prevent overwriting
+    experiment_name = f"ppo_gail_{layout}_seed{seed}"
+    
     config_dict = {
         "layout_name": env_layout,
         "horizon": 400,
@@ -98,6 +105,9 @@ def train_ppo_gail(
         "bc_schedule": [(0, 1.0), (8_000_000, 0.0)],  # Anneal GAIL partner
         "early_stop_patience": early_stop_patience,
         "seed": seed,
+        # CRITICAL: These must be set to prevent all jobs overwriting same directory
+        "experiment_name": experiment_name,
+        "results_dir": results_dir,
     }
     
     # Load GAIL model as partner
@@ -177,8 +187,13 @@ def train_ppo_gail(
     
     gail_agent = GAILAgentWrapper(gail_policy, featurize_fn, stochastic=True)
     
-    # Create output directory
-    run_dir = os.path.join(PPO_GAIL_SAVE_DIR, layout, f"seed_{seed}")
+    # Create output directory for final model copies
+    # Use run-specific directory if run_suffix is provided (e.g., ppo_gail_runs_run4)
+    if run_suffix:
+        ppo_gail_save_dir = os.path.join(DATA_DIR, f"ppo_gail_runs_{run_suffix}")
+    else:
+        ppo_gail_save_dir = PPO_GAIL_SAVE_DIR
+    run_dir = os.path.join(ppo_gail_save_dir, layout, f"seed_{seed}")
     os.makedirs(run_dir, exist_ok=True)
     
     if verbose:
@@ -234,6 +249,8 @@ def train_all_layouts(
     seeds: List[int] = [0],
     total_timesteps: Optional[int] = None,
     early_stop_patience: int = 100,
+    results_dir: str = "results/ppo_gail",
+    run_suffix: Optional[str] = None,
     verbose: bool = True,
 ):
     """Train PPO_GAIL for all layouts."""
@@ -247,6 +264,8 @@ def train_all_layouts(
                     seed=seed,
                     total_timesteps=total_timesteps,
                     early_stop_patience=early_stop_patience,
+                    results_dir=results_dir,
+                    run_suffix=run_suffix,
                     verbose=verbose,
                 )
                 results[f"{layout}_seed{seed}"] = metrics
@@ -283,6 +302,8 @@ def main():
                         help="Enable early stopping (disabled by default for paper reproduction)")
     parser.add_argument("--patience", type=int, default=100,
                         help="Early stopping patience (if enabled)")
+    parser.add_argument("--gail_model_base_dir", type=str, default=None,
+                        help="Base directory for GAIL models (default: DATA_DIR/gail_runs)")
     parser.add_argument("--quiet", action="store_true", help="Reduce verbosity")
     
     args = parser.parse_args()
@@ -321,6 +342,14 @@ def main():
     if args.num_training_iters:
         total_timesteps = args.num_training_iters * 12000
     
+    # Extract run_suffix from results_dir (e.g., "run4" from "results/ppo_gail_run4")
+    run_suffix = None
+    if args.results_dir:
+        import re
+        match = re.search(r'_?(run\d+)$', args.results_dir)
+        if match:
+            run_suffix = match.group(1)
+    
     if args.all_layouts:
         for layout in LAYOUTS:
             # Set layout-specific timesteps if not overridden
@@ -328,10 +357,20 @@ def main():
             if layout_timesteps is None:
                 layout_timesteps = PAPER_ITERS[layout] * 12000
             
+            # Compute GAIL model directory
+            gail_model_dir = None
+            if args.gail_model_base_dir:
+                gail_model_dir = os.path.join(args.gail_model_base_dir, layout)
+            
             for seed in seeds:
                 print(f"\n{'='*60}")
                 print(f"Training PPO_GAIL: {layout} seed {seed}")
                 print(f"Timesteps: {layout_timesteps:,}")
+                print(f"Results dir: {args.results_dir}")
+                if run_suffix:
+                    print(f"Run suffix: {run_suffix}")
+                if gail_model_dir:
+                    print(f"GAIL model: {gail_model_dir}")
                 print(f"{'='*60}")
                 
                 train_ppo_gail(
@@ -339,6 +378,9 @@ def main():
                     seed=seed,
                     total_timesteps=layout_timesteps,
                     early_stop_patience=early_stop_patience,
+                    gail_model_dir=gail_model_dir,
+                    results_dir=args.results_dir,
+                    run_suffix=run_suffix,
                     verbose=verbose,
                 )
     elif args.layout:
@@ -347,11 +389,19 @@ def main():
         if layout_timesteps is None:
             layout_timesteps = PAPER_ITERS[args.layout] * 12000
         
+        # Compute GAIL model directory
+        gail_model_dir = None
+        if args.gail_model_base_dir:
+            gail_model_dir = os.path.join(args.gail_model_base_dir, args.layout)
+        
         train_ppo_gail(
             layout=args.layout,
             seed=args.seed,
             total_timesteps=layout_timesteps,
             early_stop_patience=early_stop_patience,
+            gail_model_dir=gail_model_dir,
+            results_dir=args.results_dir,
+            run_suffix=run_suffix,
             verbose=verbose,
         )
     else:
