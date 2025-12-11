@@ -155,18 +155,34 @@ def train_ppo_sp(
     results = trainer.train()
     
     # Save final config
-    config_path = os.path.join(
-        results_dir, 
-        config_dict["experiment_name"],
-        "config.json"
-    )
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    run_dir = os.path.join(results_dir, config_dict["experiment_name"])
+    os.makedirs(run_dir, exist_ok=True)
+    
+    config_path = os.path.join(run_dir, "config.json")
     with open(config_path, "w") as f:
         # Convert config to JSON-serializable format
         json_config = {k: v for k, v in config_dict.items() 
                        if not callable(v) and k != "bc_schedule"}
         json_config["bc_schedule"] = str(config_dict.get("bc_schedule", []))
         json.dump(json_config, f, indent=2)
+    
+    # Save metrics (including periodic evaluation results)
+    metrics_path = os.path.join(run_dir, "metrics.json")
+    with open(metrics_path, "w") as f:
+        # Convert numpy types to Python types for JSON serialization
+        metrics = {}
+        for k, v in results.items():
+            if k == "train_info":
+                continue  # Skip complex training info
+            elif isinstance(v, (np.floating, np.integer)):
+                metrics[k] = float(v)
+            elif isinstance(v, np.ndarray):
+                metrics[k] = v.tolist()
+            elif isinstance(v, list):
+                metrics[k] = [float(x) if isinstance(x, (np.floating, np.integer)) else x for x in v]
+            else:
+                metrics[k] = v
+        json.dump(metrics, f, indent=2)
     
     # Finish WandB
     if use_wandb:

@@ -446,7 +446,10 @@ def main():
     if args.layout:
         # Train single layout
         bc_model_dir = args.bc_model_dir
-        if bc_model_dir is None and args.use_default_bc_models:
+        if bc_model_dir is None and args.bc_model_base_dir:
+            # Construct path from base directory
+            bc_model_dir = os.path.join(args.bc_model_base_dir, args.layout)
+        elif bc_model_dir is None and args.use_default_bc_models:
             bc_model_dir = DEFAULT_BC_MODEL_PATHS.get(args.layout)
         
         results = train_ppo_bc(

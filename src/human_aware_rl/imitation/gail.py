@@ -651,12 +651,26 @@ def train_gail(layout: str, bc_model_dir: str = None, verbose: bool = True, **kw
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--layout", default="cramped_room")
-    parser.add_argument("--timesteps", type=int, default=500_000)
-    parser.add_argument("--kl_coef", type=float, default=0.5)
-    parser.add_argument("--all_layouts", action="store_true")
+    parser = argparse.ArgumentParser(
+        description="Train GAIL models for Overcooked AI",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("--layout", default="cramped_room",
+                        help="Layout to train on")
+    parser.add_argument("--timesteps", type=int, default=500_000,
+                        help="Total training timesteps")
+    parser.add_argument("--kl_coef", type=float, default=0.5,
+                        help="KL regularization coefficient")
+    parser.add_argument("--all_layouts", action="store_true",
+                        help="Train all 5 paper layouts")
+    parser.add_argument("--results_dir", type=str, default=None,
+                        help="Output directory for GAIL models (default: DATA_DIR/gail_runs)")
     args = parser.parse_args()
+    
+    # Set results_dir in kwargs if specified
+    kwargs = {"total_timesteps": args.timesteps, "kl_coef": args.kl_coef}
+    if args.results_dir:
+        kwargs["results_dir"] = args.results_dir
     
     if args.all_layouts:
         layouts = ["cramped_room", "asymmetric_advantages", "coordination_ring", 
@@ -665,7 +679,7 @@ if __name__ == "__main__":
             print(f"\n{'='*60}")
             print(f"Training GAIL for {layout}")
             print(f"{'='*60}")
-            train_gail(layout, total_timesteps=args.timesteps, kl_coef=args.kl_coef)
+            train_gail(layout, **kwargs)
     else:
-        train_gail(args.layout, total_timesteps=args.timesteps, kl_coef=args.kl_coef)
+        train_gail(args.layout, **kwargs)
 

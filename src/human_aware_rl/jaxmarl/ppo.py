@@ -242,8 +242,11 @@ class PPOTrainer:
         self.obs_shape = self.envs.obs_shape
         self.num_actions = self.envs.num_actions
         
-        # Initialize random key
-        self.key = random.PRNGKey(0)
+        # Initialize random key from config seed
+        self.key = random.PRNGKey(config.seed)
+        
+        # Also set numpy seed for any numpy-based randomness
+        np.random.seed(config.seed)
         
         # Create networks
         self._init_networks()
@@ -470,6 +473,9 @@ class PPOTrainer:
         best_mean_reward = float('-inf')
         no_improvement_count = 0
         
+        # Periodic evaluation tracking
+        eval_rewards = []  # Store rewards from periodic evaluations
+        
         if self.config.verbose:
             print(f"Starting PPO training for {self.config.total_timesteps} timesteps")
             print(f"Layout: {self.config.layout_name}")
@@ -581,17 +587,34 @@ class PPOTrainer:
             # Save checkpoint
             if update % self.config.save_interval == 0:
                 self.save_checkpoint(update)
+            
+            # Periodic evaluation with greedy action selection
+            if update % self.config.eval_interval == 0:
+                eval_reward = self.evaluate(self.config.eval_num_games)
+                eval_rewards.append(eval_reward)
+                if self.config.verbose:
+                    print(f"  [Eval] Update {update}: Mean reward over {self.config.eval_num_games} games = {eval_reward:.2f}")
+        
+        # Final evaluation
+        final_eval_reward = self.evaluate(self.config.eval_num_games)
+        eval_rewards.append(final_eval_reward)
         
         # Final save
         self.save_checkpoint(num_updates)
+        
+        # Compute evaluation statistics
+        mean_eval_reward = np.mean(eval_rewards) if eval_rewards else 0.0
         
         if self.config.verbose:
             total_time = time.time() - start_time
             final_reward = np.mean(recent_rewards) if recent_rewards else 0.0
             print(f"\nTraining completed in {total_time:.1f}s")
-            print(f"Final mean reward: {final_reward:.2f}")
-            print(f"Best mean reward: {best_mean_reward:.2f}")
-            print(f"Total episodes: {len(episode_rewards)}")
+            print(f"Final mean reward (training): {final_reward:.2f}")
+            print(f"Best mean reward (training): {best_mean_reward:.2f}")
+            print(f"Mean eval reward (periodic): {mean_eval_reward:.2f}")
+            print(f"Final eval reward: {final_eval_reward:.2f}")
+            print(f"Total training episodes: {len(episode_rewards)}")
+            print(f"Total evaluations: {len(eval_rewards)}")
         
         return {
             "total_timesteps": self.total_timesteps,
@@ -599,6 +622,9 @@ class PPOTrainer:
             "episode_rewards": episode_rewards,
             "final_mean_reward": np.mean(recent_rewards) if recent_rewards else 0.0,
             "best_mean_reward": best_mean_reward,
+            "eval_rewards": eval_rewards,
+            "mean_eval_reward": mean_eval_reward,
+            "final_eval_reward": final_eval_reward,
         }
 
     def _collect_rollout_with_rewards(self, train_state, states, obs, current_episode_rewards):
@@ -727,6 +753,88 @@ class PPOTrainer:
     def get_policy(self):
         """Return the trained policy for evaluation."""
         return self.train_state.params
+
+    def evaluate(self, num_games: int = None) -> float:
+        """
+        Run evaluation episodes with greedy (deterministic) action selection.
+        
+        Uses a separate environment instance to avoid polluting training state.
+        
+        Args:
+            num_games: Number of evaluation games to run (default: config.eval_num_games)
+            
+        Returns:
+            Mean reward across all evaluation episodes
+        """
+        if num_games is None:
+            num_games = self.config.eval_num_games
+        
+        eval_rewards = []
+        
+        # Create a separate environment for evaluation to avoid polluting training envs
+        from human_aware_rl.jaxmarl.overcooked_env import OvercookedJaxEnv, OvercookedJaxEnvConfig
+        eval_config = OvercookedJaxEnvConfig(
+            layout_name=self.config.layout_name,
+            horizon=self.config.horizon,
+            old_dynamics=True,
+            reward_shaping_factor=0.0,  # No reward shaping during evaluation
+        )
+        eval_env = OvercookedJaxEnv(config=eval_config)
+        
+        for _ in range(num_games):
+            states, obs = eval_env.reset()
+            episode_reward = 0.0
+            done = False
+            
+            while not done:
+                # Get observations
+                obs_0 = jnp.array(obs["agent_0"])[None]  # Add batch dimension
+                obs_1 = jnp.array(obs["agent_1"])[None]
+                
+                # Greedy action selection (argmax) for both agents
+                if self.config.use_lstm:
+                    logits_0, _, _ = self.train_state.apply_fn(
+                        self.train_state.params,
+                        obs_0,
+                        self.network.initialize_carry(1)
+                    )
+                    logits_1, _, _ = self.train_state.apply_fn(
+                        self.train_state.params,
+                        obs_1,
+                        self.network.initialize_carry(1)
+                    )
+                else:
+                    logits_0, _ = self.train_state.apply_fn(self.train_state.params, obs_0)
+                    logits_1, _ = self.train_state.apply_fn(self.train_state.params, obs_1)
+                
+                action_0 = int(jnp.argmax(logits_0[0]))
+                action_1 = int(jnp.argmax(logits_1[0]))
+                
+                # Step environment
+                actions = {
+                    "agent_0": np.array([action_0]),
+                    "agent_1": np.array([action_1]),
+                }
+                
+                states, obs, rewards, dones, infos = eval_env.step(states, actions)
+                
+                # Accumulate reward (handle both array and scalar returns)
+                reward = rewards["agent_0"]
+                if hasattr(reward, '__getitem__'):
+                    episode_reward += float(reward[0])
+                else:
+                    episode_reward += float(reward)
+                
+                # Check done (handle both array and scalar returns)
+                done_flag = dones["__all__"]
+                if hasattr(done_flag, '__getitem__'):
+                    done = bool(done_flag[0])
+                else:
+                    done = bool(done_flag)
+            
+            eval_rewards.append(episode_reward)
+        
+        return np.mean(eval_rewards)
 
 
 def train_ppo(config: PPOConfig) -> Dict[str, Any]:

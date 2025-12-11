@@ -174,6 +174,7 @@ def train_all_layouts(
     layouts: Optional[List[str]] = None,
     verbose: bool = True,
     evaluate: bool = True,
+    base_output_dir: Optional[str] = None,
 ) -> Dict[str, Dict]:
     """
     Train BC models for all layouts.
@@ -183,6 +184,8 @@ def train_all_layouts(
         layouts: List of layouts to train (default: all paper layouts)
         verbose: Whether to print progress
         evaluate: Whether to evaluate models after training
+        base_output_dir: Base directory for output (default: BC_SAVE_DIR)
+                        Models saved to base_output_dir/<split>/<layout>/
         
     Returns:
         Dictionary mapping layout names to training results
@@ -193,10 +196,17 @@ def train_all_layouts(
     results = {}
     
     for layout in layouts:
+        # Compute output_dir for this layout
+        if base_output_dir:
+            output_dir = os.path.join(base_output_dir, data_split, layout)
+        else:
+            output_dir = None  # Will use default BC_SAVE_DIR/<split>/<layout>
+        
         try:
             result = train_bc_for_layout(
                 layout=layout,
                 data_split=data_split,
+                output_dir=output_dir,
                 verbose=verbose,
                 evaluate=evaluate,
             )
@@ -212,6 +222,7 @@ def train_all_models(
     layouts: Optional[List[str]] = None,
     verbose: bool = True,
     evaluate: bool = True,
+    base_output_dir: Optional[str] = None,
 ) -> Dict[str, Dict[str, Dict]]:
     """
     Train both BC and Human Proxy models for all layouts.
@@ -220,6 +231,8 @@ def train_all_models(
         layouts: List of layouts to train (default: all paper layouts)
         verbose: Whether to print progress
         evaluate: Whether to evaluate models after training
+        base_output_dir: Base directory for output (default: BC_SAVE_DIR)
+                        Models saved to base_output_dir/<split>/<layout>/
         
     Returns:
         Dictionary with 'bc' and 'hp' keys, each mapping layouts to results
@@ -239,6 +252,7 @@ def train_all_models(
         layouts=layouts,
         verbose=verbose,
         evaluate=evaluate,
+        base_output_dir=base_output_dir,
     )
     
     if verbose:
@@ -251,6 +265,7 @@ def train_all_models(
         layouts=layouts,
         verbose=verbose,
         evaluate=evaluate,
+        base_output_dir=base_output_dir,
     )
     
     return results
@@ -326,6 +341,13 @@ def main():
         help="Custom output directory (only for single layout)"
     )
     
+    parser.add_argument(
+        "--output_base_dir",
+        type=str,
+        default=None,
+        help="Base output directory for all layouts (models saved to base/<split>/<layout>/)"
+    )
+    
     args = parser.parse_args()
     
     verbose = not args.quiet
@@ -333,31 +355,41 @@ def main():
     
     if args.layout:
         # Train single layout
+        # Use output_dir if specified, otherwise construct from output_base_dir
+        output_dir = args.output_dir
+        if output_dir is None and args.output_base_dir:
+            # For single layout, we construct the path based on split
+            pass  # Will be set per-split below
+        
         if args.hp_only:
+            od = args.output_dir or (os.path.join(args.output_base_dir, "test", args.layout) if args.output_base_dir else None)
             results = {"hp": {args.layout: train_bc_for_layout(
-                args.layout, "test", args.output_dir, verbose, evaluate
+                args.layout, "test", od, verbose, evaluate
             )}}
         elif args.bc_only:
+            od = args.output_dir or (os.path.join(args.output_base_dir, "train", args.layout) if args.output_base_dir else None)
             results = {"bc": {args.layout: train_bc_for_layout(
-                args.layout, "train", args.output_dir, verbose, evaluate
+                args.layout, "train", od, verbose, evaluate
             )}}
         else:
+            od_train = args.output_dir or (os.path.join(args.output_base_dir, "train", args.layout) if args.output_base_dir else None)
+            od_test = args.output_dir or (os.path.join(args.output_base_dir, "test", args.layout) if args.output_base_dir else None)
             results = {
                 "bc": {args.layout: train_bc_for_layout(
-                    args.layout, "train", args.output_dir, verbose, evaluate
+                    args.layout, "train", od_train, verbose, evaluate
                 )},
                 "hp": {args.layout: train_bc_for_layout(
-                    args.layout, "test", args.output_dir, verbose, evaluate
+                    args.layout, "test", od_test, verbose, evaluate
                 )},
             }
     elif args.all_layouts:
         # Train all layouts
         if args.hp_only:
-            results = {"hp": train_all_layouts("test", None, verbose, evaluate)}
+            results = {"hp": train_all_layouts("test", None, verbose, evaluate, args.output_base_dir)}
         elif args.bc_only:
-            results = {"bc": train_all_layouts("train", None, verbose, evaluate)}
+            results = {"bc": train_all_layouts("train", None, verbose, evaluate, args.output_base_dir)}
         else:
-            results = train_all_models(None, verbose, evaluate)
+            results = train_all_models(None, verbose, evaluate, args.output_base_dir)
     else:
         parser.print_help()
         print("\nError: Must specify --layout or --all_layouts")
