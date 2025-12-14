@@ -21,11 +21,13 @@ This module provides Bayesian and probabilistic versions of imitation learning a
    - [Bayesian GAIL](#4-bayesian-gail)
    - [Bayesian PPO+BC](#5-bayesian-ppobc)
    - [Bayesian PPO+GAIL](#6-bayesian-ppogail)
+   - [Bayesian Inverse Planning](#7-bayesian-inverse-planning)
 5. [Installation](#installation)
 6. [Usage](#usage)
 7. [Project Structure](#project-structure)
 8. [Analysis Tools](#analysis-tools)
-9. [References](#references)
+9. [Inverse Planning Analysis Pipeline](#inverse-planning-analysis-pipeline)
+10. [References](#references)
 
 ---
 
@@ -118,6 +120,7 @@ This allows us to ask: "What goal is this human pursuing?"
 | **Bayesian GAIL** | `bayesian_gail.py` | Adversarial IL + uncertainty | Bayesian discriminator |
 | **Bayesian PPO+BC** | `bayesian_ppo_bc.py` | Safe RL / uncertainty-aware RL | Bayesian actor-critic with BC anchor |
 | **Bayesian PPO+GAIL** | `bayesian_ppo_gail.py` | Inverse RL + uncertainty | Full Bayesian IRL pipeline |
+| **Inverse Planning** | `inverse_planning.py` | Bayesian cognitive science | Infer reward weights θ and rationality β from behavior |
 
 ---
 
@@ -555,6 +558,130 @@ trainer.train()
 
 ---
 
+### 7. Bayesian Inverse Planning
+
+**File**: `probmods/models/inverse_planning.py`
+
+#### What It Does
+
+Performs **Bayesian inverse planning** to recover interpretable reward weights (θ) and rationality parameters (β) from observed policy behavior. This provides a cognitively grounded explanation of what each RL algorithm implicitly values.
+
+#### Theoretical Inspiration
+
+- **Baker, Saxe, Tenenbaum (2009)**: "Action Understanding as Inverse Planning" - Bayesian theory of mind
+- **Ziebart et al. (2008)**: Maximum entropy inverse reinforcement learning
+- **Griffiths, Chater, Tenenbaum**: Bayesian models of cognition
+- **Jern, Lucas, Kemp (2017)**: Inverse decision theory
+
+#### The Model
+
+The generative model assumes agents are **softmax-rational** with linear reward:
+
+```
+R(s,a) = θᵀ φ(s)        # Linear reward in state features
+P(a|s) ∝ exp(β · R(s,a)) # Softmax-rational choice
+```
+
+Where:
+- **θ** (theta): Feature weights representing what the agent values
+- **φ(s)**: 96-dimensional interpretable features of Overcooked states
+- **β** (beta): Rationality parameter (inverse temperature)
+
+#### Why Inverse Planning?
+
+Standard RL evaluation focuses on *performance metrics* (reward, success rate). Inverse planning provides *cognitive explanations*:
+
+| Metric | What It Tells Us |
+|--------|-----------------|
+| **θ (feature weights)** | What the agent implicitly values (pot proximity, collision avoidance, partner distance, etc.) |
+| **β (rationality)** | How deterministic/consistent the agent's behavior is |
+| **Comparison** | Why some algorithms coordinate better with humans than others |
+
+#### Feature Space
+
+The 96-dimensional feature vector includes interpretable components:
+
+| Feature Group | Features | Interpretation |
+|--------------|----------|----------------|
+| **Orientation** | 4 | Which direction agent faces |
+| **Held Object** | 4 | What agent is carrying |
+| **Ingredient Distance** | 12 | Proximity to onion, tomato, dish, soup, serving, counter |
+| **Pot State** | 20 (per 2 pots) | Pot readiness, contents, cook time |
+| **Wall Proximity** | 4 | Spatial constraints |
+| **Partner Features** | 46 | Other player's state (for coordination analysis) |
+| **Position** | 4 | Relative and absolute position |
+
+#### Priors
+
+```python
+θ ~ Normal(0, σ_θ)      # Feature weights prior
+β ~ LogNormal(μ_β, σ_β)  # Rationality prior (ensures β > 0)
+```
+
+#### Usage
+
+```python
+from probmods.models.inverse_planning import InversePlanningConfig, InversePlanningTrainer
+
+# Train on human demonstrations
+config = InversePlanningConfig(
+    layout_name="cramped_room",
+    tag="human_demo",
+    num_epochs=500,
+    theta_prior_scale=1.0,
+    beta_prior_mean=1.0,
+    beta_prior_scale=1.0,
+)
+
+trainer = InversePlanningTrainer(config)
+trainer.train()
+
+# Get posterior samples
+samples = trainer.get_posterior_samples(num_samples=1000)
+theta_mean = samples["theta"].mean(axis=0)  # (action_dim, feature_dim)
+beta_mean = samples["beta"].mean()
+```
+
+#### Comparing Algorithms
+
+```python
+from probmods.analysis.interpretability import posterior_stats_from_guide
+from probmods.analysis.compare_models import compare_cognitive_parameters
+from probmods.models.inverse_planning import load_inverse_planning
+
+# Load models for different algorithms
+model_ppo, guide_ppo, _ = load_inverse_planning("results/inverse_planning/cramped_room/ppo_bc")
+model_gail, guide_gail, _ = load_inverse_planning("results/inverse_planning/cramped_room/ppo_gail")
+
+# Extract posterior statistics
+stats_ppo = posterior_stats_from_guide(model_ppo, guide_ppo)
+stats_gail = posterior_stats_from_guide(model_gail, guide_gail)
+
+# Compare
+comparison = compare_cognitive_parameters({"ppo_bc": stats_ppo, "ppo_gail": stats_gail})
+print(f"Cosine similarity: {comparison['cosine_similarity']['ppo_bc_vs_ppo_gail']:.3f}")
+print(f"β difference: {comparison['beta_comparison']['ppo_bc']['mean']:.2f} vs {comparison['beta_comparison']['ppo_gail']['mean']:.2f}")
+```
+
+#### Interpreting Results
+
+Example interpretation from posterior analysis:
+
+> "Algorithm PPO-BC places high positive weight on `p0_closest_pot_0_is_ready` (+2.3) and 
+> `p0_closest_serving_dx` (-1.8, meaning it moves toward serving areas), with β=3.2 (fairly 
+> deterministic). Algorithm PPO-GAIL has stronger weight on `p1_closest_onion_dx` (+1.5, 
+> attending to partner's ingredient access) but lower β=1.8 (more stochastic). This explains 
+> why PPO-GAIL coordinates better with humans—it explicitly attends to partner state."
+
+#### Outputs
+
+- `results/inverse_planning/{layout}/{tag}/params.pt`: Pyro parameter store
+- `results/inverse_planning/{layout}/{tag}/config.pkl`: Model configuration
+- `results/inverse_planning/analysis_summary.json`: Cross-algorithm comparison
+- `results/inverse_planning/plots/`: Visualization of feature weights and β
+
+---
+
 ## Installation
 
 ### Prerequisites
@@ -678,7 +805,8 @@ Overcooked_ProbMods/
 │   │   ├── hierarchical_bc.py         # Hierarchical goal-conditioned BC
 │   │   ├── bayesian_gail.py           # Bayesian GAIL
 │   │   ├── bayesian_ppo_bc.py         # Bayesian PPO with BC
-│   │   └── bayesian_ppo_gail.py       # Bayesian PPO + GAIL
+│   │   ├── bayesian_ppo_gail.py       # Bayesian PPO + GAIL
+│   │   └── inverse_planning.py        # Bayesian inverse planning (IRL)
 │   ├── data/                          # Data utilities
 │   │   ├── __init__.py
 │   │   └── overcooked_data.py         # Human trajectory loading
@@ -686,7 +814,9 @@ Overcooked_ProbMods/
 │   │   ├── __init__.py
 │   │   ├── compare_models.py          # Model comparison metrics
 │   │   ├── uncertainty.py             # Uncertainty quantification
-│   │   └── interpretability.py        # Goal/rationality extraction
+│   │   ├── interpretability.py        # Goal/rationality/posterior extraction
+│   │   ├── feature_mapping.py         # Feature index to name mapping
+│   │   └── visualization.py           # Plotting utilities
 │   ├── inference/                     # Pyro inference utilities
 │   │   └── __init__.py
 │   └── utils/                         # General utilities
@@ -695,17 +825,30 @@ Overcooked_ProbMods/
 │   ├── train_all.py
 │   ├── train_bayesian_bc.py
 │   ├── evaluate.py
-│   └── compare.py
+│   ├── compare.py
+│   ├── run_inverse_planning.py        # Train inverse planning models
+│   ├── analyze_inverse_planning.py    # Analyze and visualize posteriors
+│   └── collect_policy_trajectories.py # Collect trajectories from policies
 ├── hpc/                               # SLURM scripts
-│   ├── train_array.sh                 # Parallel training
-│   ├── train_bc_only.sh               # Single model
-│   └── evaluate_all.sh
+│   ├── train_array.sh                 # Parallel training (all models)
+│   ├── train_bc_only.sh               # Single model training
+│   ├── evaluate_all.sh                # Evaluation jobs
+│   ├── train_inverse_planning.sh      # Inverse planning array job
+│   ├── analyze_inverse_planning.sh    # Analysis after training
+│   ├── collect_trajectories.sh        # Trajectory collection array job
+│   └── run_inverse_planning_pipeline.sh # Full pipeline launcher
 ├── configs/
 │   └── default.yaml                   # Default hyperparameters
 ├── results/                           # Training outputs (created at runtime)
 │   ├── bayesian_bc/
 │   ├── rational_agent/
-│   └── hierarchical_bc/
+│   ├── hierarchical_bc/
+│   ├── inverse_planning/              # Inverse planning outputs
+│   │   ├── {layout}/{tag}/            # Per-layout, per-source posteriors
+│   │   ├── plots/                     # Visualization outputs
+│   │   └── analysis_summary.json      # Cross-algorithm comparison
+│   └── trajectories/                  # Collected policy trajectories
+│       └── {layout}/{source}/
 ├── logs/                              # SLURM logs
 ├── requirements.txt
 ├── setup.py
@@ -758,6 +901,191 @@ kl = kl_between_policies(probs_model_a, probs_model_b)
 
 ---
 
+## Inverse Planning Analysis Pipeline
+
+The inverse planning pipeline provides a complete workflow for inferring and comparing cognitive parameters across different RL algorithms.
+
+### Overview
+
+The pipeline follows the structure from **Bayesian Models of Cognition**:
+
+1. **Collect trajectories** from trained policies (BC-PPO, BC-GAIL, etc.)
+2. **Infer reward weights (θ)** and **rationality (β)** via Bayesian inverse planning
+3. **Visualize** feature weights with credible intervals
+4. **Compare** algorithms at the cognitive level
+
+### Running the Full Pipeline
+
+```bash
+# Option 1: Run everything (collect + train + analyze)
+bash hpc/run_inverse_planning_pipeline.sh --collect
+
+# Option 2: Skip trajectory collection (use existing data)
+bash hpc/run_inverse_planning_pipeline.sh
+
+# This submits:
+#   - Trajectory collection (12 jobs: 3 layouts × 4 sources)
+#   - Inverse planning training (9 jobs: 3 layouts × 3 sources)
+#   - Analysis (1 job, runs after training completes)
+```
+
+### Individual Steps
+
+#### 1. Collect Trajectories
+
+```bash
+# Collect from all sources for one layout
+python scripts/collect_policy_trajectories.py --layout cramped_room --all-sources
+
+# Collect from specific source
+python scripts/collect_policy_trajectories.py --layout cramped_room --source ppo_bc --num-episodes 100
+
+# HPC: Submit array job for all layouts/sources
+sbatch hpc/collect_trajectories.sh
+```
+
+#### 2. Train Inverse Planning Models
+
+```bash
+# Train on human demonstrations
+python scripts/run_inverse_planning.py --layouts cramped_room --tags human_demo --epochs 500
+
+# Train on policy trajectories
+python scripts/run_inverse_planning.py --layouts cramped_room --tags ppo_bc ppo_gail --use-trajectories
+
+# HPC: Submit array job
+sbatch hpc/train_inverse_planning.sh
+```
+
+#### 3. Analyze and Visualize
+
+```bash
+# Generate plots and comparison JSON
+python scripts/analyze_inverse_planning.py \
+    --layouts cramped_room asymmetric_advantages coordination_ring \
+    --tags human_demo ppo_bc ppo_gail \
+    --save-plots \
+    --output-json results/inverse_planning/analysis_summary.json
+
+# HPC: Submit analysis job
+sbatch hpc/analyze_inverse_planning.sh
+```
+
+### Output Files
+
+| File | Description |
+|------|-------------|
+| `results/inverse_planning/{layout}/{tag}/params.pt` | Pyro posterior parameters |
+| `results/inverse_planning/{layout}/{tag}/config.pkl` | Model configuration |
+| `results/inverse_planning/analysis_summary.json` | Full comparison across algorithms |
+| `results/inverse_planning/plots/{layout}_{tag}_weights.png` | Feature weight bar plots |
+| `results/inverse_planning/plots/{layout}_comparison.png` | Cross-algorithm comparison |
+| `results/inverse_planning/plots/beta_comparison.png` | Rationality comparison |
+
+### Visualizations
+
+The pipeline generates several visualization types:
+
+#### Feature Weight Plots
+
+Bar plots showing posterior mean weights with 95% credible intervals:
+
+```python
+from probmods.analysis.visualization import plot_feature_weights
+from probmods.analysis.feature_mapping import FEATURE_INDEX_TO_NAME
+
+plot_feature_weights(
+    posterior_stats,
+    FEATURE_INDEX_TO_NAME,
+    top_k=20,  # Show top 20 features by magnitude
+    save_path="feature_weights.png"
+)
+```
+
+#### Algorithm Comparison
+
+Side-by-side comparison of feature weights:
+
+```python
+from probmods.analysis.visualization import plot_algorithm_comparison
+
+plot_algorithm_comparison(
+    {"PPO-BC": stats_ppo, "PPO-GAIL": stats_gail, "Human": stats_human},
+    top_k=15,
+    save_path="algorithm_comparison.png"
+)
+```
+
+#### Rationality Comparison
+
+Compare β across algorithms:
+
+```python
+from probmods.analysis.visualization import plot_beta_comparison
+
+plot_beta_comparison(
+    {"PPO-BC": stats_ppo, "PPO-GAIL": stats_gail},
+    save_path="beta_comparison.png"
+)
+```
+
+### Cognitive Comparison Metrics
+
+```python
+from probmods.analysis.compare_models import compare_cognitive_parameters
+
+results = compare_cognitive_parameters({
+    "human_demo": stats_human,
+    "ppo_bc": stats_ppo,
+    "ppo_gail": stats_gail,
+})
+
+# Cosine similarity between θ vectors
+print(results["cosine_similarity"])
+# {'human_demo_vs_ppo_bc': 0.82, 'human_demo_vs_ppo_gail': 0.76, ...}
+
+# β comparison
+print(results["beta_comparison"])
+# {'human_demo': {'mean': 1.8, 'std': 0.3}, 'ppo_bc': {'mean': 3.2, 'std': 0.5}, ...}
+
+# Top differing features
+print(results["top_theta_differences"]["human_demo_vs_ppo_bc"])
+# [('p0_closest_pot_0_is_ready', 1.2), ('p1_closest_onion_dx', -0.8), ...]
+```
+
+### Example Interpretation
+
+After running the analysis, you might find:
+
+```
+Algorithm Comparison for cramped_room:
+======================================
+
+Feature weights (top differences):
+- PPO-BC has +2.1 higher weight on `p0_closest_pot_0_is_ready`
+  → PPO-BC prioritizes serving ready soups
+- PPO-GAIL has +1.5 higher weight on `p1_closest_onion_dx`
+  → PPO-GAIL attends more to partner's ingredient access
+- Human demos have +0.8 higher weight on `p0_wall_N`
+  → Humans are more spatially cautious
+
+Rationality (β):
+- Human: 1.8 ± 0.3 (noisy rational)
+- PPO-BC: 3.2 ± 0.5 (more deterministic)
+- PPO-GAIL: 2.4 ± 0.4 (intermediate)
+
+Cosine similarity (θ vectors):
+- Human vs PPO-BC: 0.72
+- Human vs PPO-GAIL: 0.81 ← More human-like!
+
+Interpretation:
+PPO-GAIL produces policies more similar to human preferences in feature space,
+particularly in partner-related features. This may explain why PPO-GAIL
+coordinates better with human partners in gameplay evaluations.
+```
+
+---
+
 ## References
 
 ### Core Papers
@@ -766,19 +1094,30 @@ kl = kl_between_policies(probs_model_a, probs_model_b)
    - Blundell, C., et al. (2015). "Weight Uncertainty in Neural Networks." ICML.
    - Graves, A. (2011). "Practical Variational Inference for Neural Networks." NeurIPS.
 
-2. **Rational Agent Models**
+2. **Rational Agent Models & Inverse Planning**
    - Luce, R. D. (1959). "Individual Choice Behavior."
    - Baker, C., Saxe, R., Tenenbaum, J. (2009). "Action Understanding as Inverse Planning." Cognition.
+   - Jern, A., Lucas, C., Kemp, C. (2017). "People Learn Other People's Preferences Through Inverse Decision-Making." Cognition.
 
-3. **Hierarchical RL**
+3. **Bayesian Cognitive Science**
+   - Griffiths, T., Chater, N., Tenenbaum, J. (2024). "Bayesian Models of Cognition." Cambridge Handbook.
+   - Goodman, N., Frank, M. (2016). "Pragmatic Language Interpretation as Probabilistic Inference." Trends in Cognitive Sciences.
+   - Lake, B., Ullman, T., Tenenbaum, J., Gershman, S. (2017). "Building Machines That Learn and Think Like People." BBS.
+
+4. **Inverse Reinforcement Learning**
+   - Ziebart, B., et al. (2008). "Maximum Entropy Inverse Reinforcement Learning." AAAI.
+   - Ng, A., Russell, S. (2000). "Algorithms for Inverse Reinforcement Learning." ICML.
+   - Ramachandran, D., Amir, E. (2007). "Bayesian Inverse Reinforcement Learning." IJCAI.
+
+5. **Hierarchical RL**
    - Sutton, R., et al. (1999). "Between MDPs and semi-MDPs: A Framework for Temporal Abstraction."
    - Kulkarni, T., et al. (2016). "Hierarchical Deep Reinforcement Learning."
 
-4. **Imitation Learning**
+6. **Imitation Learning**
    - Ho, J., Ermon, S. (2016). "Generative Adversarial Imitation Learning." NeurIPS.
    - Ross, S., et al. (2011). "A Reduction of Imitation Learning to No-Regret Online Learning."
 
-5. **PPO**
+7. **PPO**
    - Schulman, J., et al. (2017). "Proximal Policy Optimization Algorithms."
 
 ### Software

@@ -437,7 +437,10 @@ def load_bayesian_bc(model_dir: str, device: str | None = None):
         guide = AutoLowRankMultivariateNormal(model, rank=10)
 
     pyro.clear_param_store()
-    pyro.get_param_store().load(os.path.join(model_dir, "params.pt"), map_location=device)
+    # Use weights_only=False for Pyro compatibility with PyTorch 2.6+
+    params_path = os.path.join(model_dir, "params.pt")
+    state = torch.load(params_path, map_location=device, weights_only=False)
+    pyro.get_param_store().set_state(state)
     return model, guide, config
 
 
