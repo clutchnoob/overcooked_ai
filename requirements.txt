@@ -23,6 +23,10 @@ jaxlib>=0.4
 flax>=0.8
 optax>=0.2
 
+# Probabilistic Programming (PPL models)
+pyro-ppl>=1.8.0
+numpyro>=0.13.0
+
 # Experiment tracking (optional)
 wandb
 sacred

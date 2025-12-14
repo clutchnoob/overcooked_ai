@@ -40,6 +40,8 @@ mkdir -p "$SLURM_SUBMIT_DIR/../logs/eval_run3"
 mkdir -p "$PROJECT_ROOT/eval_results/run3"
 
 # Activate conda environment
+export MKL_INTERFACE_LAYER=GNU
+export MKL_THREADING_LAYER=GNU
 source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
 conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
 

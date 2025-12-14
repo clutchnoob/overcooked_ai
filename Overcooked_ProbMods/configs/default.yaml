@@ -1,0 +1,138 @@
+# Default configuration for Overcooked ProbMods
+# Override these values via command line or config files
+
+# Available layouts
+layouts:
+  - cramped_room
+  - asymmetric_advantages
+  - coordination_ring
+  - forced_coordination
+  - counter_circuit_o_1order
+
+# Common training settings
+training:
+  device: "cuda"  # or "cpu"
+  seed: 42
+  num_workers: 4
+
+# Bayesian BC settings
+bayesian_bc:
+  hidden_dim: 64
+  num_layers: 2
+  num_epochs: 1000
+  batch_size: 64
+  learning_rate: 0.001
+  prior_scale: 1.0
+  num_posterior_samples: 50
+  save_every: 100
+
+# Rational Agent settings
+rational_agent:
+  hidden_dim: 64
+  num_layers: 2
+  num_epochs: 1000
+  batch_size: 64
+  learning_rate: 0.001
+  beta_prior_mean: 1.0
+  beta_prior_scale: 1.0
+  num_posterior_samples: 50
+
+# Hierarchical BC settings
+hierarchical_bc:
+  hidden_dim: 64
+  num_goals: 4
+  num_epochs: 1500
+  batch_size: 64
+  learning_rate: 0.001
+  goal_prior_concentration: 1.0
+  temperature: 1.0
+
+# Bayesian GAIL settings
+bayesian_gail:
+  # Policy network
+  policy_hidden_dim: 64
+  policy_num_layers: 2
+  # Discriminator network
+  disc_hidden_dim: 64
+  disc_num_layers: 2
+  disc_prior_scale: 1.0
+  # Training
+  num_epochs: 500
+  policy_lr: 0.0003
+  disc_lr: 0.001
+  batch_size: 64
+  # PPO hyperparameters
+  clip_epsilon: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  # BC regularization
+  bc_kl_coef: 0.1
+  bc_anchor_path: null  # Path to BC model for KL anchor
+
+# Bayesian PPO+BC settings
+bayesian_ppo_bc:
+  hidden_dim: 64
+  num_layers: 2
+  prior_scale: 1.0
+  num_epochs: 500
+  batch_size: 64
+  learning_rate: 0.0003
+  # PPO hyperparameters
+  clip_epsilon: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  gamma: 0.99
+  gae_lambda: 0.95
+  # BC regularization
+  bc_kl_coef: 0.1
+  bc_init_epochs: 100
+  bc_anchor_path: null
+
+# Bayesian PPO+GAIL settings
+bayesian_ppo_gail:
+  # Policy (Bayesian)
+  policy_hidden_dim: 64
+  policy_num_layers: 2
+  policy_prior_scale: 1.0
+  # Discriminator
+  disc_hidden_dim: 64
+  disc_num_layers: 2
+  # Training
+  num_epochs: 500
+  policy_lr: 0.0003
+  disc_lr: 0.001
+  batch_size: 64
+  # PPO hyperparameters
+  clip_epsilon: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  gamma: 0.99
+  gae_lambda: 0.95
+  # BC regularization
+  bc_kl_coef: 0.1
+  bc_anchor_path: null
+
+# Evaluation settings
+evaluation:
+  num_posterior_samples: 100
+  test_split: 0.2
+  metrics:
+    - cross_entropy
+    - accuracy
+    - perplexity
+    - mean_entropy
+    - epistemic_variance
+
+# Analysis settings
+analysis:
+  compare_with_baselines: true
+  baseline_dir: "../src/human_aware_rl"
+  output_format: "json"  # or "csv"
+  plot_results: true
+
+# Logging
+logging:
+  level: "INFO"
+  save_logs: true
+  log_dir: "logs"
+  tensorboard: false

@@ -1,0 +1,25 @@
+# Overcooked ProbMods - Dependencies
+# Probabilistic Programming for Overcooked AI
+
+# Core deep learning
+torch>=1.12.0
+numpy>=1.21.0
+
+# Probabilistic programming
+pyro-ppl>=1.8.0
+numpyro>=0.13.0  # Optional: faster inference backend
+
+# Data and utilities
+scipy>=1.7.0
+pandas>=1.3.0
+pyyaml>=6.0
+
+# Visualization (optional)
+matplotlib>=3.5.0
+seaborn>=0.11.0
+
+# Progress tracking
+tqdm>=4.62.0
+
+# Parent package (install from project root)
+# pip install -e ../  (for overcooked_ai_py)
