@@ -163,13 +163,22 @@ class Policy(nn.Module):
 class BayesianGAILTrainer:
     def __init__(self, config: BayesianGAILConfig):
         self.config = config
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = self._get_device()
         pyro.set_rng_seed(config.seed)
         torch.manual_seed(config.seed)
         self._setup_env()
         self._load_expert()
         self._setup_models()
         self.current_kl_coef = config.kl_coef
+
+    @staticmethod
+    def _get_device() -> str:
+        """Get best available device (CUDA > MPS > CPU)."""
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
 
     def _setup_env(self):
         mdp_params = {"layout_name": self.config.layout_name, "old_dynamics": self.config.old_dynamics}

@@ -51,8 +51,17 @@ def load_human_data(config: DataConfig) -> Tuple[np.ndarray, np.ndarray]:
     return np.array(states), np.array(actions)
 
 
+def _get_device() -> str:
+    """Get best available device (CUDA > MPS > CPU)."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 def to_torch(states: np.ndarray, actions: np.ndarray, device: str | None = None):
-    device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = device or _get_device()
     states_t = torch.tensor(states, dtype=torch.float32, device=device)
     actions_t = torch.tensor(actions, dtype=torch.long, device=device)
     return states_t, actions_t

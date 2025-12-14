@@ -126,7 +126,7 @@ class RationalAgentTrainer:
 
     def __init__(self, config: RationalAgentConfig):
         self.config = config
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = self._get_device()
 
         pyro.set_rng_seed(config.seed)
         torch.manual_seed(config.seed)
@@ -139,6 +139,15 @@ class RationalAgentTrainer:
             print("Rational Agent Trainer initialized")
             print(f"  Device: {self.device}")
             print(f"  Learn beta: {config.learn_beta}")
+
+    @staticmethod
+    def _get_device() -> str:
+        """Get best available device (CUDA > MPS > CPU)."""
+        if torch.cuda.is_available():
+            return "cuda"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        return "cpu"
 
     def _setup_environment(self):
         mdp_params = {"layout_name": self.config.layout_name, "old_dynamics": True}

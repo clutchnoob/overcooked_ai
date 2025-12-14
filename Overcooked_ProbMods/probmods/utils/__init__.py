@@ -22,10 +22,25 @@ def set_seed(seed: int) -> None:
 
 
 def get_device(device: Optional[str] = None) -> torch.device:
-    """Get torch device, defaulting to CUDA if available."""
+    """Get torch device, defaulting to CUDA > MPS > CPU."""
     if device is not None:
         return torch.device(device)
-    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def get_device_str(device: Optional[str] = None) -> str:
+    """Get device string (for inline use in configs)."""
+    if device is not None:
+        return device
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 
 def ensure_dir(path: Union[str, Path]) -> Path:
@@ -88,6 +103,7 @@ def setup_logging(
 __all__ = [
     "set_seed",
     "get_device",
+    "get_device_str",
     "ensure_dir",
     "save_checkpoint",
     "load_checkpoint",
