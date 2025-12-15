@@ -8,6 +8,7 @@ Available models:
 - BayesianGAILTrainer: Bayesian GAIL
 - BayesianPPOBCTrainer: Bayesian PPO with BC initialization
 - BayesianPPOGAILTrainer: Bayesian PPO + GAIL
+- InversePlanningAgent, InversePlanningTrainer: Bayesian inverse planning
 """
 
 # Lazy imports to handle missing pyro gracefully
@@ -33,6 +34,12 @@ _model_imports = {
     "BayesianPPOGAILTrainer": "bayesian_ppo_gail",
     "BayesianPPOGAILConfig": "bayesian_ppo_gail",
     "train_bayesian_ppo_gail": "bayesian_ppo_gail",
+    "InversePlanningConfig": "inverse_planning",
+    "InversePlanningTrainer": "inverse_planning",
+    "InversePlanningAgent": "inverse_planning",
+    "LinearInversePlanningModel": "inverse_planning",
+    "load_inverse_planning": "inverse_planning",
+    "create_inverse_planning_agent": "inverse_planning",
 }
 
 

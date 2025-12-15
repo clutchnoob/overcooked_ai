@@ -19,6 +19,19 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+
+class NumpyEncoder(json.JSONEncoder):
+    """JSON encoder that handles numpy types."""
+    def default(self, obj):
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (np.float32, np.float64)):
+            return float(obj)
+        if isinstance(obj, (np.int32, np.int64)):
+            return int(obj)
+        return super().default(obj)
+
+
 # Add paths
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = SCRIPT_DIR.parent
@@ -35,6 +48,7 @@ from overcooked_ai_py.mdp.overcooked_env import DEFAULT_ENV_PARAMS
 from probmods.models.bayesian_bc import BayesianBCModel, BayesianBCAgent, load_bayesian_bc
 from probmods.models.rational_agent import RationalAgentModel, RationalAgent, QNetwork
 from probmods.models.hierarchical_bc import HierarchicalBCModel, HierarchicalBCAgent
+from probmods.models.inverse_planning import InversePlanningAgent, load_inverse_planning
 
 
 # Layouts to evaluate
@@ -229,6 +243,25 @@ def evaluate_ppl_model(
                 stochastic=True,
                 device=device,
             )
+        elif model_type == "inverse_planning":
+            # Inverse planning models have a tag subdirectory (default: human_demo)
+            invplan_dir = model_dir / "human_demo"
+            if not invplan_dir.exists():
+                # Try other tags
+                for tag in ["ppo_bc", "ppo_gail", "default"]:
+                    invplan_dir = model_dir / tag
+                    if invplan_dir.exists():
+                        break
+            model, guide, config = load_inverse_planning(str(invplan_dir), device)
+            agent = InversePlanningAgent(
+                model=model,
+                guide=guide,
+                featurize_fn=featurize_fn,
+                agent_index=0,
+                stochastic=True,
+                use_posterior_mean=True,
+                device=device,
+            )
         else:
             raise ValueError(f"Unknown model type: {model_type}")
         
@@ -278,7 +311,7 @@ def run_full_evaluation(
     if layouts is None:
         layouts = LAYOUTS
     if model_types is None:
-        model_types = ["rational_agent", "bayesian_bc", "hierarchical_bc"]
+        model_types = ["rational_agent", "bayesian_bc", "hierarchical_bc", "inverse_planning"]
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     if verbose:
@@ -361,18 +394,18 @@ def run_full_evaluation(
 
 def print_results_table(results: Dict):
     """Print results in a nice table format."""
-    print("\n" + "="*100)
+    print("\n" + "="*120)
     print("PPL MODEL EVALUATION RESULTS (Reward when paired with Human Proxy)")
-    print("="*100)
+    print("="*120)
     
     # Header
-    model_types = ["rational_agent_hp", "bayesian_bc_hp", "hierarchical_bc_hp"]
+    model_types = ["rational_agent_hp", "bayesian_bc_hp", "hierarchical_bc_hp", "inverse_planning_hp"]
     header = f"{'Layout':<25}"
     for mt in model_types:
         name = mt.replace("_hp", "").replace("_", " ").title()
         header += f" {name:<20}"
     print(header)
-    print("-"*100)
+    print("-"*120)
     
     # Data rows
     for layout in results:
@@ -388,14 +421,14 @@ def print_results_table(results: Dict):
                 row += f" {'N/A':<20}"
         print(row)
     
-    print("="*100)
+    print("="*120)
 
 
 def compare_with_baselines(results: Dict, run4_results_path: Optional[str] = None):
     """Compare PPL results with Run 4 baseline results."""
-    print("\n" + "="*100)
+    print("\n" + "="*120)
     print("COMPARISON WITH RUN 4 BASELINES")
-    print("="*100)
+    print("="*120)
     
     # Try to load Run 4 results
     run4_path = run4_results_path or str(OVERCOOKED_ROOT / "eval_results" / "run4" / "run4_results_20251211_005738.json")
@@ -404,8 +437,8 @@ def compare_with_baselines(results: Dict, run4_results_path: Optional[str] = Non
         with open(run4_path) as f:
             run4_results = json.load(f)
         
-        print(f"\n{'Layout':<22} {'BC+HP':<12} {'PPO_BC+HP':<12} {'Rational':<12} {'Bayesian BC':<12} {'Hierarchical':<12}")
-        print("-"*100)
+        print(f"\n{'Layout':<22} {'BC+HP':<12} {'PPO_BC+HP':<12} {'Rational':<12} {'Bayesian BC':<12} {'Hierarchical':<12} {'InvPlan':<12}")
+        print("-"*120)
         
         for layout in results:
             if layout in run4_results:
@@ -417,10 +450,11 @@ def compare_with_baselines(results: Dict, run4_results_path: Optional[str] = Non
             rational = results[layout].get("rational_agent_hp", {}).get("mean", 0)
             bayesian = results[layout].get("bayesian_bc_hp", {}).get("mean", 0)
             hierarchical = results[layout].get("hierarchical_bc_hp", {}).get("mean", 0)
+            inverse_plan = results[layout].get("inverse_planning_hp", {}).get("mean", 0)
             
-            print(f"{layout:<22} {bc:>10.1f}  {ppo_bc:>10.1f}  {rational:>10.1f}  {bayesian:>10.1f}  {hierarchical:>10.1f}")
+            print(f"{layout:<22} {bc:>10.1f}  {ppo_bc:>10.1f}  {rational:>10.1f}  {bayesian:>10.1f}  {hierarchical:>10.1f}  {inverse_plan:>10.1f}")
         
-        print("="*100)
+        print("="*120)
     else:
         print(f"Run 4 results not found at {run4_path}")
 
@@ -472,7 +506,7 @@ def main():
     
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     with open(save_path, "w") as f:
-        json.dump(results, f, indent=2)
+        json.dump(results, f, indent=2, cls=NumpyEncoder)
     print(f"\nResults saved to {save_path}")
 
 

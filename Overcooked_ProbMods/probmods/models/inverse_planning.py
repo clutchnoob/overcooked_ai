@@ -15,7 +15,7 @@ import os
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple, TYPE_CHECKING
 
 import numpy as np
 import pyro
@@ -281,9 +281,228 @@ def load_inverse_planning(model_dir: str, device: Optional[str] = None) -> Tuple
     return model, guide, config
 
 
+class InversePlanningAgent:
+    """
+    Agent that uses a trained Inverse Planning model to select actions.
+    
+    Uses the inferred reward weights (θ) and rationality (β) to compute
+    action probabilities via a softmax-rational decision rule:
+        P(a | s) ∝ exp(β × θ_a · φ(s))
+    
+    This allows the inverse planning model to be evaluated in gameplay
+    scenarios (e.g., paired with a Human Proxy).
+    """
+
+    def __init__(
+        self,
+        model: LinearInversePlanningModel,
+        guide,
+        featurize_fn,
+        agent_index: int = 0,
+        stochastic: bool = True,
+        use_posterior_mean: bool = True,
+        num_posterior_samples: int = 10,
+        beta_override: Optional[float] = None,
+        device: Optional[str] = None,
+    ):
+        # Initialize agent_index for compatibility with AgentPair
+        self.agent_index = agent_index
+        """
+        Initialize the Inverse Planning Agent.
+        
+        Args:
+            model: Trained LinearInversePlanningModel
+            guide: Pyro guide containing posterior parameters
+            featurize_fn: Function to convert game state to feature vector
+            agent_index: Which player this agent controls (0 or 1)
+            stochastic: Whether to sample actions or take argmax
+            use_posterior_mean: If True, use posterior mean of θ and β.
+                               If False, sample from posterior each step.
+            num_posterior_samples: Number of samples if not using posterior mean
+            beta_override: If set, use this β instead of inferred value
+            device: Device for computation (cuda/cpu)
+        """
+        self.model = model
+        self.guide = guide
+        self.featurize_fn = featurize_fn
+        self.agent_index = agent_index
+        self.stochastic = stochastic
+        self.use_posterior_mean = use_posterior_mean
+        self.num_posterior_samples = num_posterior_samples
+        self.beta_override = beta_override
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        
+        self.model = self.model.to(self.device)
+        
+        # Extract posterior mean parameters
+        self._extract_posterior_params()
+    
+    def _extract_posterior_params(self):
+        """Extract θ and β posterior means from the guide."""
+        # Create dummy input to sample from guide
+        # The guide needs states input to properly initialize/sample
+        dummy_states = torch.zeros(1, self.model.state_dim, device=self.device)
+        
+        # Sample from guide to populate model parameters
+        with torch.no_grad():
+            # Call guide with dummy states (actions=None since we're not conditioning)
+            self.guide(dummy_states, None)
+            self.theta_mean = self.model.theta.detach().clone()  # (A, F)
+            self.beta_mean = self.model.beta.detach().clone()    # scalar
+    
+    def action(self, state) -> Tuple[Any, Dict[str, Any]]:
+        """
+        Select an action for the current state.
+        
+        Args:
+            state: Overcooked game state
+            
+        Returns:
+            Tuple of (action, info_dict)
+        """
+        from overcooked_ai_py.mdp.actions import Action
+        
+        # Get observation for this agent
+        obs = self.featurize_fn(state)
+        my_obs = obs[self.agent_index]
+        obs_flat = my_obs.flatten()
+        obs_tensor = torch.tensor(obs_flat, dtype=torch.float32, device=self.device).unsqueeze(0)
+        
+        with torch.no_grad():
+            if self.use_posterior_mean:
+                # Use posterior mean
+                theta = self.theta_mean  # (A, F)
+                beta = self.beta_override if self.beta_override is not None else self.beta_mean
+            else:
+                # Sample from posterior
+                self.guide(obs_tensor, None)
+                theta = self.model.theta  # (A, F)
+                beta = self.beta_override if self.beta_override is not None else self.model.beta
+            
+            # Compute action logits: β × (θ @ s^T)
+            # obs_tensor: (1, F), theta: (A, F)
+            # logits: (1, A) = β × (obs_tensor @ theta^T)
+            logits = beta * (obs_tensor @ theta.T)  # (1, A)
+            probs = torch.softmax(logits, dim=-1).squeeze(0).cpu().numpy()  # (A,)
+        
+        # Select action
+        if self.stochastic:
+            action_idx = np.random.choice(len(probs), p=probs)
+        else:
+            action_idx = int(np.argmax(probs))
+        
+        action = Action.INDEX_TO_ACTION[action_idx]
+        
+        info = {
+            "action_probs": probs,
+            "beta": float(beta) if isinstance(beta, (int, float)) else float(beta.item()),
+            "logits": logits.squeeze(0).cpu().numpy(),
+        }
+        
+        return action, info
+    
+    def reset(self):
+        """Reset agent state (no-op for this agent)."""
+        pass
+    
+    def set_mdp(self, mdp):
+        """Set the MDP (required by AgentEvaluator)."""
+        self.mdp = mdp
+    
+    def set_agent_index(self, index: int):
+        """Set which player this agent controls."""
+        self.agent_index = index
+    
+    @classmethod
+    def from_saved(
+        cls,
+        model_dir: str,
+        featurize_fn,
+        agent_index: int = 0,
+        device: Optional[str] = None,
+        **kwargs,
+    ) -> "InversePlanningAgent":
+        """
+        Load an InversePlanningAgent from a saved model directory.
+        
+        Args:
+            model_dir: Path to saved model (contains params.pt and config.pkl)
+            featurize_fn: Function to convert game state to features
+            agent_index: Which player this agent controls
+            device: Device for computation
+            **kwargs: Additional arguments passed to agent constructor
+            
+        Returns:
+            Initialized InversePlanningAgent
+        """
+        model, guide, config = load_inverse_planning(model_dir, device)
+        return cls(
+            model=model,
+            guide=guide,
+            featurize_fn=featurize_fn,
+            agent_index=agent_index,
+            device=device,
+            **kwargs,
+        )
+
+
+def create_inverse_planning_agent(
+    layout: str,
+    tag: str = "human_demo",
+    results_dir: Optional[str] = None,
+    agent_index: int = 0,
+    stochastic: bool = True,
+    beta_override: Optional[float] = None,
+    device: Optional[str] = None,
+) -> InversePlanningAgent:
+    """
+    Convenience function to create an InversePlanningAgent for a given layout.
+    
+    Args:
+        layout: Layout name (e.g., "cramped_room")
+        tag: Model tag (e.g., "human_demo", "ppo_bc", "ppo_gail")
+        results_dir: Directory containing trained models
+        agent_index: Which player this agent controls
+        stochastic: Whether to sample actions
+        beta_override: Override the inferred β value
+        device: Device for computation
+        
+    Returns:
+        Initialized InversePlanningAgent ready to play
+    """
+    from overcooked_ai_py.agents.benchmarking import AgentEvaluator
+    from overcooked_ai_py.mdp.overcooked_env import DEFAULT_ENV_PARAMS
+    
+    results_dir = results_dir or str(DEFAULT_RESULTS_DIR)
+    model_dir = os.path.join(results_dir, "inverse_planning", layout, tag)
+    
+    if not os.path.exists(model_dir):
+        raise FileNotFoundError(f"Model not found at {model_dir}")
+    
+    # Create featurize function for this layout
+    ae = AgentEvaluator.from_layout_name(
+        mdp_params={"layout_name": layout, "old_dynamics": True},
+        env_params=DEFAULT_ENV_PARAMS,
+    )
+    
+    def featurize_fn(state):
+        return ae.env.featurize_state_mdp(state)
+    
+    return InversePlanningAgent.from_saved(
+        model_dir=model_dir,
+        featurize_fn=featurize_fn,
+        agent_index=agent_index,
+        stochastic=stochastic,
+        beta_override=beta_override,
+        device=device,
+    )
+
+
 __all__ = [
     "InversePlanningConfig",
     "LinearInversePlanningModel",
     "InversePlanningTrainer",
     "load_inverse_planning",
+    "InversePlanningAgent",
+    "create_inverse_planning_agent",
 ]
