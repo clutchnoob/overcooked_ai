@@ -55,13 +55,21 @@ Notable weight patterns:
 
 ## 2. Baseline Comparison (Run 4)
 
-### 2.1 All Agent Types Performance
+### 2.1 PPL Models vs RL Baselines
 
-| Layout | SP+HP | PPO_BC+HP | BC+HP | GAIL+HP | PPO_GAIL+HP | InvPlan+HP |
-|--------|-------|-----------|-------|---------|-------------|------------|
-| cramped_room | 36.8 | 125.6 | 72.8 | 14.4 | 150.4 | 12.0 |
-| asymmetric_advantages | 118.8 | 204.0 | 52.8 | 22.4 | 266.4 | **56.0** |
-| coordination_ring | 0.4 | 2.4 | 36.0 | 1.6 | 73.6 | 2.0 |
+| Layout | Rational Agent | PPO_BC+HP | BC+HP | PPO_GAIL+HP | InvPlan |
+|--------|---------------|-----------|-------|-------------|---------|
+| cramped_room | **120.0** | 125.6 | 72.8 | 150.4 | 20.0 |
+| asymmetric_advantages | **100.0** | 204.0 | 52.8 | 266.4 | 68.0 |
+| coordination_ring | **62.0** | 2.4 | 36.0 | 73.6 | 0.0 |
+
+### 2.2 All Agent Types Performance
+
+| Layout | SP+HP | PPO_BC+HP | BC+HP | GAIL+HP | PPO_GAIL+HP | Rational Agent |
+|--------|-------|-----------|-------|---------|-------------|----------------|
+| cramped_room | 36.8 | 125.6 | 72.8 | 14.4 | 150.4 | **120.0** |
+| asymmetric_advantages | 118.8 | 204.0 | 52.8 | 22.4 | 266.4 | **100.0** |
+| coordination_ring | 0.4 | 2.4 | 36.0 | 1.6 | 73.6 | **62.0** |
 | forced_coordination | 0.0 | 3.2 | 10.4 | 0.0 | 10.4 | N/A |
 | counter_circuit | 1.2 | 0.4 | 20.8 | 0.0 | 8.0 | N/A |
 
