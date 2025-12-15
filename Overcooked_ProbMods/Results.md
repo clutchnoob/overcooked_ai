@@ -55,21 +55,13 @@ Notable weight patterns:
 
 ## 2. Baseline Comparison (Run 4)
 
-### 2.1 PPL Models vs RL Baselines
+### 2.1 All Agent Types Performance
 
-| Layout | Rational Agent | PPO_BC+HP | BC+HP | PPO_GAIL+HP | InvPlan |
-|--------|---------------|-----------|-------|-------------|---------|
-| cramped_room | **120.0** | 125.6 | 72.8 | 150.4 | 20.0 |
-| asymmetric_advantages | **100.0** | 204.0 | 52.8 | 266.4 | 68.0 |
-| coordination_ring | **62.0** | 2.4 | 36.0 | 73.6 | 0.0 |
-
-### 2.2 All Agent Types Performance
-
-| Layout | SP+HP | PPO_BC+HP | BC+HP | GAIL+HP | PPO_GAIL+HP | Rational Agent |
-|--------|-------|-----------|-------|---------|-------------|----------------|
-| cramped_room | 36.8 | 125.6 | 72.8 | 14.4 | 150.4 | **120.0** |
-| asymmetric_advantages | 118.8 | 204.0 | 52.8 | 22.4 | 266.4 | **100.0** |
-| coordination_ring | 0.4 | 2.4 | 36.0 | 1.6 | 73.6 | **62.0** |
+| Layout | SP+HP | PPO_BC+HP | BC+HP | GAIL+HP | PPO_GAIL+HP | InvPlan+HP |
+|--------|-------|-----------|-------|---------|-------------|------------|
+| cramped_room | 36.8 | 125.6 | 72.8 | 14.4 | 150.4 | 12.0 |
+| asymmetric_advantages | 118.8 | 204.0 | 52.8 | 22.4 | 266.4 | **56.0** |
+| coordination_ring | 0.4 | 2.4 | 36.0 | 1.6 | 73.6 | 2.0 |
 | forced_coordination | 0.0 | 3.2 | 10.4 | 0.0 | 10.4 | N/A |
 | counter_circuit | 1.2 | 0.4 | 20.8 | 0.0 | 8.0 | N/A |
 
@@ -183,12 +175,22 @@ python scripts/evaluate_ppl_reward.py --models inverse_planning --num_games 25 -
 
 | Model Type | cramped_room | asymmetric_advantages | coordination_ring |
 |------------|--------------|----------------------|-------------------|
-| Inverse Planning + HP | 12.0 +/- 4.2 | 56.0 +/- 8.4 | 2.0 +/- 1.9 |
-| BC + HP | 72.8 +/- 6.1 | 52.8 +/- 6.5 | 36.0 +/- 3.4 |
-| PPO_BC + HP | 125.6 +/- 4.3 | 204.0 +/- 5.2 | 2.4 +/- 1.3 |
-| PPO_GAIL + HP | 150.4 +/- 3.8 | 266.4 +/- 3.7 | 73.6 +/- 7.7 |
+| **Rational Agent + HP** | **120.0 +/- 9.8** | **100.0 +/- 11.7** | **62.0 +/- 11.1** |
+| Hierarchical BC + HP | 38.0 +/- 8.2 | 60.0 +/- 8.0 | 8.0 +/- 3.1 |
+| Bayesian BC + HP | 26.0 +/- 4.0 | 30.0 +/- 8.1 | 8.0 +/- 3.1 |
+| Inverse Planning + HP | 20.0 +/- 8.5 | 68.0 +/- 7.0 | 0.0 +/- 0.0 |
+| BC + HP (baseline) | 72.8 | 52.8 | 36.0 |
+| PPO_BC + HP | 125.6 | 204.0 | 2.4 |
+| PPO_GAIL + HP | 150.4 | 266.4 | 73.6 |
 
-### Cognitive Parameters
+### Model Rankings (by average performance)
+
+1. **Rational Agent** - Best PPL model, competitive with PPO_BC
+2. Inverse Planning - Strong on asymmetric_advantages
+3. Hierarchical BC - Moderate performance with goal inference
+4. Bayesian BC - Lower performance but provides uncertainty
+
+### Cognitive Parameters (Inverse Planning)
 
 | Layout | beta (Rationality) | theta Dimensions |
 |--------|-----------------|--------------|
@@ -198,3 +200,4 @@ python scripts/evaluate_ppl_reward.py --models inverse_planning --num_games 25 -
 
 *Generated: December 14, 2025*
 *Evaluation: 10 games per configuration*
+*Results file: ppl_eval_rewards_20251214_202844.json*
