@@ -172,6 +172,9 @@ node_modules/
 **/__pycache__/
 #manually correcting for demo 
 !**/static/**/*.png
+
+# Keep graphics assets required for visualization
+!src/overcooked_ai_py/data/graphics/*.png
 !src/overcooked_demo/server/static/lib
 
 # Ignore copied overcooked_ai directory in server
