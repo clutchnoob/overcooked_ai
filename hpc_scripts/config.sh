@@ -1,0 +1,72 @@
+#!/bin/bash
+# ============================================================================
+# HPC Training Configuration
+# ============================================================================
+# This file contains shared configuration for all training scripts.
+# Source this file at the beginning of each training script.
+# ============================================================================
+
+# Project paths
+export PROJECT_ROOT="/om/scratch/Mon/mabdel03/6.S890/overcooked_ai"
+export HUMAN_AWARE_RL_DIR="${PROJECT_ROOT}/src/human_aware_rl"
+export HPC_SCRIPTS_DIR="${PROJECT_ROOT}/hpc_scripts"
+export LOGS_DIR="${HPC_SCRIPTS_DIR}/logs"
+
+# Results directories (relative to HUMAN_AWARE_RL_DIR)
+export RESULTS_DIR="${HUMAN_AWARE_RL_DIR}/results"
+export BC_RESULTS_DIR="${HUMAN_AWARE_RL_DIR}/bc_runs"
+
+# Conda environment setup
+setup_conda() {
+    source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
+    conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+}
+
+# Call setup automatically when sourced
+setup_conda
+
+# Set PYTHONPATH to include src directory
+export PYTHONPATH="${PROJECT_ROOT}/src:${PYTHONPATH}"
+
+# Navigate to working directory
+cd "${HUMAN_AWARE_RL_DIR}"
+
+# Layouts (paper layouts)
+LAYOUTS=(
+    "cramped_room"
+    "asymmetric_advantages"
+    "coordination_ring"
+    "forced_coordination"
+    "counter_circuit"
+)
+
+# Seeds (paper seeds)
+SEEDS=(0 10 20 30 40)
+
+# SLURM defaults
+export SLURM_TIME="48:00:00"
+export SLURM_MEM="32G"
+export SLURM_CPUS="16"
+export SLURM_PARTITION="normal"
+
+# Logging
+log_start() {
+    echo "============================================================================"
+    echo "Job: ${SLURM_JOB_NAME:-local}"
+    echo "Job ID: ${SLURM_JOB_ID:-N/A}"
+    echo "Node: ${SLURMD_NODENAME:-$(hostname)}"
+    echo "Start time: $(date)"
+    echo "Working directory: $(pwd)"
+    echo "Python: $(which python)"
+    echo "============================================================================"
+}
+
+log_end() {
+    echo "============================================================================"
+    echo "End time: $(date)"
+    echo "Exit code: $1"
+    echo "============================================================================"
+}
+
+# Export functions for use in scripts
+export -f setup_conda log_start log_end
