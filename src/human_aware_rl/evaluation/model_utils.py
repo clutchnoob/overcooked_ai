@@ -182,8 +182,8 @@ class PPOAgentWrapper(Agent):
         if self.jax_env is None:
             self._init_jax_env()
 
-        # Get observation using the jaxmarl env's encoding (same as training)
-        obs = self.jax_env.base_env.lossless_state_encoding_mdp(state)[self.agent_index]
+        # Get observation using the legacy encoding (20 channels, same as training)
+        obs = self.jax_env.base_env.lossless_state_encoding_mdp_legacy(state)[self.agent_index]
         obs = np.array(obs, dtype=np.float32)
 
         # Process through conv layers if present
