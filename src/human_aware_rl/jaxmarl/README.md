@@ -98,3 +98,4 @@ For GPU support:
 pip install "jax[cuda12]" flax optax
 ```
 
+

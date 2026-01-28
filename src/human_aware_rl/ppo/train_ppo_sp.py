@@ -87,10 +87,16 @@ def train_ppo_sp(
         print(f"Layout: {layout} -> {config_dict['layout_name']}")
         print(f"Seed: {seed}")
         print(f"Total timesteps: {config_dict['total_timesteps']:,}")
+        print(f"Num envs: {config_dict.get('num_workers', 60)}")
         print(f"Learning rate: {config_dict['learning_rate']}")
+        print(f"VF coef: {config_dict['vf_coef']}")
+        print(f"Ent coef: {config_dict.get('entropy_coeff_start', 0.01)}")
         print(f"Gamma: {config_dict['gamma']}")
+        print(f"GAE lambda: {config_dict['gae_lambda']}")
         print(f"Clip epsilon: {config_dict['clip_eps']}")
-        print(f"Entropy: {config_dict.get('entropy_coeff_start', 0.2)} -> {config_dict.get('entropy_coeff_end', 0.1)} over {config_dict.get('entropy_coeff_horizon', 3e5):.0f} steps")
+        print(f"Reward shaping horizon: {config_dict.get('reward_shaping_horizon', 2.5e6):.0e}")
+        print(f"Legacy encoding: {config_dict.get('use_legacy_encoding', True)}")
+        print(f"Old dynamics: {config_dict.get('old_dynamics', True)}")
         print(f"Results dir: {results_dir}")
         print("="*60 + "\n")
     
@@ -139,8 +145,8 @@ def train_ppo_sp(
     np.random.seed(seed)
     
     # Create PPO config
-    # Use 32 envs for better sample efficiency (paper used 30 workers)
-    num_envs = min(config_dict.get("num_workers", 32), 32)
+    # CORRECTED: Use 60 envs to match original paper batch size (60 envs x 400 steps = 24000)
+    num_envs = config_dict.get("num_workers", 60)
     
     ppo_config = PPOConfig(
         layout_name=config_dict["layout_name"],
@@ -153,8 +159,9 @@ def train_ppo_sp(
         gae_lambda=config_dict["gae_lambda"],
         clip_eps=config_dict["clip_eps"],
         vf_coef=config_dict["vf_coef"],
+        ent_coef=config_dict.get("entropy_coeff_start", 0.01),  # ADDED: Pass ent_coef explicitly
         max_grad_norm=config_dict["max_grad_norm"],
-        num_minibatches=config_dict.get("num_minibatches", 10),
+        num_minibatches=config_dict.get("num_minibatches", 6),  # CORRECTED: Was 10
         num_hidden_layers=config_dict.get("num_hidden_layers", 3),
         hidden_dim=config_dict.get("hidden_dim", 64),
         num_filters=config_dict.get("num_filters", 25),
@@ -162,17 +169,21 @@ def train_ppo_sp(
         use_lstm=config_dict.get("use_lstm", False),
         cell_size=config_dict.get("cell_size", 256),
         reward_shaping_factor=config_dict.get("reward_shaping_factor", 1.0),
-        reward_shaping_horizon=config_dict.get("reward_shaping_horizon", float('inf')),
+        reward_shaping_horizon=config_dict.get("reward_shaping_horizon", 2.5e6),  # CORRECTED default
         use_phi=config_dict.get("use_phi", False),
-        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.2),
-        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.1),
-        entropy_coeff_horizon=config_dict.get("entropy_coeff_horizon", 3e5),
-        use_entropy_annealing=True,
+        use_legacy_encoding=config_dict.get("use_legacy_encoding", True),  # ADDED: Use legacy encoding
+        old_dynamics=config_dict.get("old_dynamics", True),  # ADDED: Use old dynamics
+        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.01),  # CORRECTED: Was 0.2
+        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.01),      # CORRECTED: Was 0.1
+        entropy_coeff_horizon=config_dict.get("entropy_coeff_horizon", 0),  # CORRECTED: No annealing
+        use_entropy_annealing=config_dict.get("use_entropy_annealing", False),  # CORRECTED: Was True
         num_epochs=config_dict.get("num_sgd_iter", 8),
         log_interval=config_dict.get("log_interval", 1),
         save_interval=config_dict.get("save_interval", 50),
         eval_interval=config_dict.get("eval_interval", 25),
+        eval_num_games=config_dict.get("evaluation_num_games", 5),  # ADDED
         early_stop_patience=config_dict.get("early_stop_patience", 100),
+        use_early_stopping=config_dict.get("use_early_stopping", False),  # ADDED: Default off for paper repro
         verbose=verbose,
         results_dir=results_dir,
         experiment_name=config_dict["experiment_name"],
@@ -405,22 +416,14 @@ def main():
             "early_stop_patience": 10,
         }
     elif args.fast:
-        # Fast mode: still use reasonable timesteps, especially for hard layouts
-        # Default 2M for most layouts, but hard layouts need more
+        # Fast mode: use 5M timesteps (matches successful paper reproduction)
         local_overrides = {
-            "total_timesteps": 2000000,  # 2M (was 1M which was too short)
-            "num_workers": 32,
-            "use_early_stopping": True,
-            "early_stop_patience": 100,  # More patience for variance
-            "save_interval": 25,
+            "total_timesteps": 5000000,  # 5M (matches paper reproduction)
+            "num_workers": 60,  # CORRECTED: 60 envs for proper batch size
+            "use_early_stopping": False,  # CORRECTED: Disable for paper reproduction
+            "save_interval": 50,
             "log_interval": 1,
         }
-        
-        # Hard layouts need more timesteps even in fast mode
-        hard_layouts = ["forced_coordination", "counter_circuit", "coordination_ring"]
-        if args.layout in hard_layouts:
-            local_overrides["total_timesteps"] = 4000000  # 4M for hard layouts
-            local_overrides["early_stop_patience"] = 150  # More patience
     
     if args.timesteps:
         local_overrides["total_timesteps"] = args.timesteps

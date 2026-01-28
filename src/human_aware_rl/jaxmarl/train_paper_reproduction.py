@@ -8,7 +8,7 @@ layouts using configurations that match the original 2019 paper implementation.
 Key settings matching original ppo_sp_random0 config:
 1. Uses legacy 20-channel observation encoding (not 26-channel)
 2. Uses per-minibatch advantage normalization (not per-batch)
-3. Entropy coefficient = 0.1 (ENTROPY=0.1 in original TF code)
+3. Entropy coefficient = 0.01 (verified from successful training logs)
 4. Learning rate = 8e-4 (for random0/random3)
 5. VF_COEF = 0.5 (not 0.1!)
 6. num_envs = 60 (sim_threads in original)
@@ -73,15 +73,15 @@ def get_paper_reproduction_config(
         gamma=0.99,  # GAMMA
         gae_lambda=0.98,  # LAM (not 0.95!)
         clip_eps=0.05,  # CLIPPING (not 0.2!)
-        ent_coef=0.1,  # ENTROPY=0.1 in original - MUST match for paper reproduction!
+        ent_coef=0.01,  # CORRECTED: Successful training used 0.01 (verified from logs)
         vf_coef=0.5,  # VF_COEF=0.5 in original ppo_sp_random0 config!
         max_grad_norm=0.1,  # MAX_GRAD_NORM (not 0.5!)
         
         # No LR/entropy annealing - paper uses constant values
         use_lr_annealing=False,
         use_entropy_annealing=False,
-        entropy_coeff_start=0.1,  # Match original ENTROPY=0.1
-        entropy_coeff_end=0.1,    # No annealing - constant entropy coef
+        entropy_coeff_start=0.01,  # CORRECTED: Match successful training (0.01)
+        entropy_coeff_end=0.01,    # No annealing - constant entropy coef
         
         # Value function clipping (original baselines uses this)
         clip_vf=True,

@@ -49,6 +49,8 @@ hpc_scripts/
 
 ## Training Configuration
 
+### SLURM Resources
+
 | Parameter | Value |
 |-----------|-------|
 | **Layouts** | cramped_room, asymmetric_advantages, coordination_ring, forced_coordination, counter_circuit |
@@ -56,6 +58,54 @@ hpc_scripts/
 | **Time limit** | 48 hours (PPO), 4 hours (BC) |
 | **Memory** | 32GB (PPO), 16GB (BC) |
 | **CPUs** | 16 (PPO), 8 (BC) |
+
+### PPO Hyperparameters (Paper Reproduction)
+
+**IMPORTANT**: These hyperparameters have been **CORRECTED** based on analysis of the
+original TensorFlow implementation and successful reproduction experiments.
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| **vf_coef** | 0.5 | ⚠️ Was incorrectly 0.1 - critical for value function learning |
+| **ent_coef** | 0.01 | ⚠️ Was incorrectly 0.1 - prevents policy from staying random |
+| **learning_rate** | 0.0008 | Corrected from 0.001 |
+| **num_envs** | 60 | Corrected from 30 - larger batch size |
+| **total_timesteps** | 5,000,000 | |
+| **reward_shaping_horizon** | 2,500,000 | Reward shaping anneals to 0 by this point |
+| **gamma** | 0.99 | |
+| **gae_lambda** | 0.98 | |
+| **clip_eps** | 0.05 | |
+| **max_grad_norm** | 0.1 | |
+| **use_legacy_encoding** | True | 20-channel observation encoding |
+| **old_dynamics** | True | Auto-cook when pot has 3 ingredients |
+
+### Layout Configurations
+
+**IMPORTANT**: ALL experiments use the SAME legacy layout versions for consistency!
+
+This matches the original paper which used the same layouts (`random0`, `random3`, etc.) 
+for ALL experiments (PPO SP, PPO BC, PPO GAIL).
+
+| Paper Name | Environment Layout | MDP Parameters |
+|------------|-------------------|----------------|
+| cramped_room | `cramped_room_legacy` | cook_time=20, num_items=3, delivery_reward=20 |
+| asymmetric_advantages | `asymmetric_advantages_legacy` | cook_time=20, num_items=3, delivery_reward=20 |
+| coordination_ring | `coordination_ring_legacy` | cook_time=20, num_items=3, delivery_reward=20 |
+| forced_coordination | `random0_legacy` | cook_time=20, num_items=3, delivery_reward=20 |
+| counter_circuit | `random3_legacy` | cook_time=20, num_items=3, delivery_reward=20 |
+
+### Expected Evaluation Results (All Experiments on Legacy Layouts)
+
+| Layout | PPO SP | PPO BC | PPO GAIL |
+|--------|--------|--------|----------|
+| cramped_room | ~200 | TBD | TBD |
+| asymmetric_advantages | ~200 | TBD | TBD |
+| coordination_ring | ~150 | TBD | TBD |
+| forced_coordination | ~160 | TBD | TBD |
+| counter_circuit | ~120 | TBD | TBD |
+
+Note: PPO BC and PPO GAIL results may differ from previously reported values 
+because all experiments now use legacy layouts with explicit MDP parameters.
 
 ## Job Dependencies
 

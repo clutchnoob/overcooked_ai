@@ -26,12 +26,15 @@ LAYOUTS = [
 ]
 
 # Layout name mapping (paper name -> environment name)
+# IMPORTANT: Use LEGACY layouts (same as PPO SP) for consistent results!
+# All experiments must use the same layout version as per the original paper.
+# Legacy layouts have explicit MDP params: cook_time=20, num_items_for_soup=3, delivery_reward=20
 LAYOUT_TO_ENV = {
-    "cramped_room": "cramped_room",
-    "asymmetric_advantages": "asymmetric_advantages",
-    "coordination_ring": "coordination_ring",
-    "forced_coordination": "forced_coordination",
-    "counter_circuit": "counter_circuit_o_1order",
+    "cramped_room": "cramped_room_legacy",
+    "asymmetric_advantages": "asymmetric_advantages_legacy",
+    "coordination_ring": "coordination_ring_legacy",
+    "forced_coordination": "random0_legacy",
+    "counter_circuit": "random3_legacy",
 }
 
 

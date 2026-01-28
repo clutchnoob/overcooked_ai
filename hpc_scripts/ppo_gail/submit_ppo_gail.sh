@@ -1,53 +1,50 @@
 #!/bin/bash
 # ============================================================================
-# Submit all PPO with GAIL partner training jobs
+# Submit all PPO GAIL training jobs
 # ============================================================================
-# Usage: ./submit_ppo_gail.sh [--dependency JOB_IDS]
+# This script submits SLURM jobs for PPO with GAIL partner training.
+# PPO GAIL uses GAIL (Generative Adversarial Imitation Learning) models
+# as training partners.
+#
+# Usage:
+#   cd hpc_scripts/ppo_gail
+#   ./submit_ppo_gail.sh
+#
+# Total jobs: 25 (5 layouts × 5 seeds)
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-HPC_DIR="$(dirname "${SCRIPT_DIR}")"
+cd "$SCRIPT_DIR"
 
-# Parse arguments
-DEPENDENCY=""
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --dependency)
-            DEPENDENCY="--dependency=afterok:$2"
-            shift 2
-            ;;
-        *)
-            shift
-            ;;
-    esac
-done
+echo "=============================================="
+echo "Submitting PPO GAIL Training Jobs"
+echo "=============================================="
+echo ""
 
-mkdir -p "${HPC_DIR}/logs"
+LAYOUTS=("cramped_room" "asymmetric_advantages" "coordination_ring" "forced_coordination" "counter_circuit")
+SEEDS=(0 10 20 30 40)
 
-echo "Submitting PPO with GAIL partner training jobs..."
-if [ -n "$DEPENDENCY" ]; then
-    echo "Dependency: $DEPENDENCY"
-fi
-echo "============================================================================"
+total_jobs=0
+submitted_jobs=0
 
-LAYOUTS="cramped_room asymmetric_advantages coordination_ring forced_coordination counter_circuit"
-SEEDS="0 10 20 30 40"
-
-declare -a PPO_GAIL_JOB_IDS
-COUNT=0
-
-for layout in $LAYOUTS; do
-    for seed in $SEEDS; do
-        JOB_ID=$(sbatch --parsable $DEPENDENCY "${SCRIPT_DIR}/${layout}_seed${seed}.sh")
-        PPO_GAIL_JOB_IDS+=("$JOB_ID")
-        echo "Submitted ppo_gail_${layout}_s${seed}: Job ID ${JOB_ID}"
-        ((COUNT++))
+for layout in "${LAYOUTS[@]}"; do
+    for seed in "${SEEDS[@]}"; do
+        script="${layout}_seed${seed}.sh"
+        if [ -f "$script" ]; then
+            echo "Submitting: $script"
+            sbatch "$script"
+            ((submitted_jobs++))
+        else
+            echo "WARNING: Script not found: $script"
+        fi
+        ((total_jobs++))
     done
 done
 
-echo "============================================================================"
-echo "Total PPO_GAIL jobs submitted: ${COUNT}"
-echo "Job IDs: ${PPO_GAIL_JOB_IDS[@]}"
-echo "============================================================================"
-
-export PPO_GAIL_JOB_IDS
+echo ""
+echo "=============================================="
+echo "Submitted $submitted_jobs / $total_jobs jobs"
+echo "=============================================="
+echo ""
+echo "To check job status: squeue -u \$USER"
+echo "To cancel all jobs: scancel -u \$USER"

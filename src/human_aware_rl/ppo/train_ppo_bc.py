@@ -34,11 +34,23 @@ except ImportError:
 
 from human_aware_rl.ppo.configs.paper_configs import (
     PAPER_LAYOUTS,
-    LAYOUT_TO_ENV,
     get_ppo_bc_config,
     PAPER_PPO_BC_CONFIGS,
 )
 from human_aware_rl.imitation.behavior_cloning import BC_SAVE_DIR
+
+
+# Layout mapping for PPO BC: Use LEGACY layouts (same as PPO SP)
+# IMPORTANT: All experiments must use the same layout version for consistent results!
+# The original paper used the same layouts for ALL experiments (PPO SP, PPO BC, etc.)
+# Legacy layouts have explicit MDP params: cook_time=20, num_items_for_soup=3, delivery_reward=20
+LAYOUT_TO_ENV_BC = {
+    "cramped_room": "cramped_room_legacy",
+    "asymmetric_advantages": "asymmetric_advantages_legacy",
+    "coordination_ring": "coordination_ring_legacy",
+    "forced_coordination": "random0_legacy",
+    "counter_circuit": "random3_legacy",
+}
 
 
 # Default BC model paths (trained on human training data)
@@ -105,6 +117,10 @@ def train_ppo_bc(
         verbose=verbose,
         **overrides
     )
+    
+    # OVERRIDE: Use original layouts (not legacy) to match BC partner models
+    # BC models are trained on original layouts, PPO BC must use the same
+    config_dict["layout_name"] = LAYOUT_TO_ENV_BC.get(layout, layout)
     
     if verbose:
         print("\n" + "="*60)
