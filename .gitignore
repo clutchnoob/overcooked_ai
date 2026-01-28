@@ -230,6 +230,12 @@ logs/
 !src/human_aware_rl/static/**/*.pickle
 !src/overcooked_ai_py/data/**/*.pkl
 
+# Keep trained model weights for distribution
+!models/
+!models/**
+!models/**/*.pkl
+!models/**/*.pt
+
 # =============================================================================
 # Generated Media
 # =============================================================================
@@ -280,3 +286,11 @@ logs/
 
 # UV lock file (optional - uncomment if you want to ignore it)
 # uv.lock
+
+# =============================================================================
+# Trained Models for Distribution (MUST BE AT END)
+# =============================================================================
+# These negation rules must come last to override earlier ignore patterns
+!models/
+!models/**/
+!models/**/*
