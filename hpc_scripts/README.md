@@ -5,7 +5,7 @@ Parallelized SLURM batch scripts for training all Overcooked AI models.
 ## Quick Start
 
 ```bash
-# Submit all training jobs (105 total)
+# Submit all training jobs (80 total)
 ./submit_all.sh
 
 # Dry run (see what would be submitted)
@@ -32,6 +32,9 @@ hpc_scripts/
 │   ├── coordination_ring.sh
 │   ├── forced_coordination.sh
 │   └── counter_circuit.sh
+├── gail/               # GAIL training (5 scripts)
+│   ├── submit_gail.sh
+│   └── {layout}.sh
 ├── ppo_sp/             # PPO Self-Play (25 scripts)
 │   ├── submit_ppo_sp.sh
 │   └── {layout}_seed{0,10,20,30,40}.sh
@@ -41,9 +44,8 @@ hpc_scripts/
 ├── ppo_gail/           # PPO with GAIL partner (25 scripts)
 │   ├── submit_ppo_gail.sh
 │   └── {layout}_seed{0,10,20,30,40}.sh
-├── ppo_airl/           # PPO with AIRL partner (25 scripts)
-│   ├── submit_ppo_airl.sh
-│   └── {layout}_seed{0,10,20,30,40}.sh
+├── evaluation/         # Evaluation scripts
+│   └── run_evaluation.sh
 └── logs/               # SLURM output logs
 ```
 
@@ -55,9 +57,10 @@ hpc_scripts/
 |-----------|-------|
 | **Layouts** | cramped_room, asymmetric_advantages, coordination_ring, forced_coordination, counter_circuit |
 | **Seeds** | 0, 10, 20, 30, 40 |
-| **Time limit** | 48 hours (PPO), 4 hours (BC) |
-| **Memory** | 32GB (PPO), 16GB (BC) |
-| **CPUs** | 16 (PPO), 8 (BC) |
+| **Time limit** | 48 hours (PPO), 4 hours (BC), 8 hours (GAIL) |
+| **Memory** | 32GB (PPO), 16GB (BC), 32GB (GAIL) |
+| **CPUs** | 16 (PPO), 8 (BC/GAIL) |
+| **Partition** | Uses cluster default (not hardcoded) |
 
 ### PPO Hyperparameters (Paper Reproduction)
 
@@ -66,8 +69,8 @@ original TensorFlow implementation and successful reproduction experiments.
 
 | Parameter | Value | Notes |
 |-----------|-------|-------|
-| **vf_coef** | 0.5 | ⚠️ Was incorrectly 0.1 - critical for value function learning |
-| **ent_coef** | 0.01 | ⚠️ Was incorrectly 0.1 - prevents policy from staying random |
+| **vf_coef** | 0.5 | Was incorrectly 0.1 - critical for value function learning |
+| **ent_coef** | 0.01 | Was incorrectly 0.1 - prevents policy from staying random |
 | **learning_rate** | 0.0008 | Corrected from 0.001 |
 | **num_envs** | 60 | Corrected from 30 - larger batch size |
 | **total_timesteps** | 5,000,000 | |
@@ -111,8 +114,7 @@ because all experiments now use legacy layouts with explicit MDP parameters.
 
 ```
 BC (5 jobs) ─────┬──> PPO_BC (25 jobs)
-                 ├──> PPO_GAIL (25 jobs)
-                 └──> PPO_AIRL (25 jobs)
+                 └──> PPO_GAIL (25 jobs)
 
 PPO_SP (25 jobs) ───> (independent, no dependencies)
 ```
@@ -125,7 +127,6 @@ PPO_SP (25 jobs) ───> (independent, no dependencies)
 | PPO_SP | `src/human_aware_rl/results/ppo_sp/ppo_sp_{layout}_seed{seed}/` |
 | PPO_BC | `src/human_aware_rl/results/ppo_bc/ppo_bc_{layout}_seed{seed}/` |
 | PPO_GAIL | `src/human_aware_rl/results/ppo_gail/ppo_gail_{layout}_seed{seed}/` |
-| PPO_AIRL | `src/human_aware_rl/results/ppo_airl/ppo_airl_{layout}_seed{seed}/` |
 
 ## Monitoring Jobs
 
@@ -156,7 +157,9 @@ sbatch hpc_scripts/ppo_sp/cramped_room_seed0.sh
 sbatch --dependency=afterok:<bc_job_id> hpc_scripts/ppo_bc/cramped_room_seed0.sh
 ```
 
-## Environment
+## Setup
 
-- **Conda**: `/om/scratch/Mon/mabdel03/conda_envs/MAL_env`
-- **Project root**: `/om/scratch/Mon/mabdel03/6.S890/overcooked_ai`
+1. Update `config.sh` with your cluster paths and conda environment
+2. Create logs directory: `mkdir -p hpc_scripts/logs`
+3. Run `./submit_all.sh --dry-run` to verify scripts are found
+4. Run `./submit_all.sh` to submit everything

@@ -5,19 +5,15 @@
 #SBATCH --time=48:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=16
-#SBATCH --partition=normal
 
 # ============================================================================
 # PPO with GAIL Partner Training: coordination_ring (seed=40)
 # ============================================================================
-# PPO GAIL trains an agent with a GAIL partner trained on human demonstrations.
-#
-# IMPORTANT: Uses LEGACY layouts (same as PPO SP) for consistency!
-# All experiments in the original paper used the same layout for all methods.
-# Legacy layouts have explicit MDP params: cook_time=20, num_items=3, delivery=20
+# Trains PPO agent with a GAIL partner trained on human demonstrations.
+# GAIL models must be trained first (see hpc_scripts/gail/).
+# Uses LEGACY layouts for consistency with PPO SP.
 # ============================================================================
 
-# Source config (sets up conda, paths, etc.)
 source "$(dirname "$0")/../config.sh"
 
 log_start

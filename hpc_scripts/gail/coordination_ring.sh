@@ -1,16 +1,14 @@
 #!/bin/bash
 #SBATCH --job-name=gail_coordination_ring
-#SBATCH --output=/om/scratch/Mon/mabdel03/6.S890/overcooked_ai/hpc_scripts/logs/%x_%j.out
-#SBATCH --error=/om/scratch/Mon/mabdel03/6.S890/overcooked_ai/hpc_scripts/logs/%x_%j.err
+#SBATCH --output=../logs/%x_%j.out
+#SBATCH --error=../logs/%x_%j.err
 #SBATCH --time=08:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
-#SBATCH --partition=normal
 
 # Train GAIL model for coordination_ring layout
 
-# Use absolute path for config
-source /om/scratch/Mon/mabdel03/6.S890/overcooked_ai/hpc_scripts/config.sh
+source "$(dirname "$0")/../config.sh"
 
 log_start
 

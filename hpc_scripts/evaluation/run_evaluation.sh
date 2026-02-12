@@ -16,27 +16,26 @@
 #SBATCH --time=08:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
-#SBATCH --partition=normal
-#SBATCH --output=/om/scratch/Mon/mabdel03/6.S890/overcooked_ai/hpc_scripts/logs/eval_%j.out
-#SBATCH --error=/om/scratch/Mon/mabdel03/6.S890/overcooked_ai/hpc_scripts/logs/eval_%j.err
+#SBATCH --output=../logs/eval_%j.out
+#SBATCH --error=../logs/eval_%j.err
 
 set -eo pipefail
 
 # ============================================================================
 # Configuration
 # ============================================================================
-PROJECT_ROOT="/om/scratch/Mon/mabdel03/6.S890/overcooked_ai"
-HUMAN_AWARE_RL_DIR="${PROJECT_ROOT}/src/human_aware_rl"
-CONDA_ENV="/om/scratch/Mon/mabdel03/conda_envs/MAL_env"
+# Source shared config (sets PROJECT_ROOT, conda, PYTHONPATH, etc.)
+source "$(dirname "$0")/../config.sh"
+
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
 # Create output directories
-mkdir -p "${HUMAN_AWARE_RL_DIR}/results"
-mkdir -p "${PROJECT_ROOT}/hpc_scripts/logs"
+mkdir -p "${RESULTS_DIR}"
+mkdir -p "${LOGS_DIR}"
 
 # Output paths with timestamp
-RESULTS_JSON="${HUMAN_AWARE_RL_DIR}/results/hpc_eval_results_${TIMESTAMP}.json"
-FIGURE_PATH="${HUMAN_AWARE_RL_DIR}/results/hpc_eval_figure4_${TIMESTAMP}.png"
+RESULTS_JSON="${RESULTS_DIR}/hpc_eval_results_${TIMESTAMP}.json"
+FIGURE_PATH="${RESULTS_DIR}/hpc_eval_figure4_${TIMESTAMP}.png"
 
 # ============================================================================
 # Environment Setup
@@ -49,18 +48,6 @@ echo "Results will be saved to:"
 echo "  - JSON: ${RESULTS_JSON}"
 echo "  - Figure: ${FIGURE_PATH}"
 echo "============================================================"
-
-# Setup conda (disable unbound variable check for conda activation scripts)
-set +u
-source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
-conda activate "${CONDA_ENV}"
-set -u
-
-# Set PYTHONPATH
-export PYTHONPATH="${PROJECT_ROOT}/src:${PYTHONPATH:-}"
-
-# Change to working directory
-cd "${HUMAN_AWARE_RL_DIR}"
 
 echo "Python: $(which python)"
 echo "Working directory: $(pwd)"
@@ -93,8 +80,8 @@ python -m human_aware_rl.evaluation.plot_hpc_results \
     --include_gail
 
 # Also copy to a "latest" file for easy access
-cp "${RESULTS_JSON}" "${HUMAN_AWARE_RL_DIR}/results/hpc_eval_results_latest.json"
-cp "${FIGURE_PATH}" "${HUMAN_AWARE_RL_DIR}/results/hpc_eval_figure4_latest.png"
+cp "${RESULTS_JSON}" "${RESULTS_DIR}/hpc_eval_results_latest.json"
+cp "${FIGURE_PATH}" "${RESULTS_DIR}/hpc_eval_figure4_latest.png"
 
 echo ""
 echo "============================================================"
@@ -103,6 +90,6 @@ echo "============================================================"
 echo "Results saved to:"
 echo "  - JSON: ${RESULTS_JSON}"
 echo "  - Figure: ${FIGURE_PATH}"
-echo "  - Latest JSON: ${HUMAN_AWARE_RL_DIR}/results/hpc_eval_results_latest.json"
-echo "  - Latest Figure: ${HUMAN_AWARE_RL_DIR}/results/hpc_eval_figure4_latest.png"
+echo "  - Latest JSON: ${RESULTS_DIR}/hpc_eval_results_latest.json"
+echo "  - Latest Figure: ${RESULTS_DIR}/hpc_eval_figure4_latest.png"
 echo "============================================================"

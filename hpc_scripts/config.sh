@@ -4,10 +4,14 @@
 # ============================================================================
 # This file contains shared configuration for all training scripts.
 # Source this file at the beginning of each training script.
+#
+# SETUP: Update the following before running on your cluster:
+#   1. PROJECT_ROOT - path to your cloned repo
+#   2. setup_conda() - how to activate your conda environment
 # ============================================================================
 
-# Project paths
-export PROJECT_ROOT="/om/scratch/Mon/mabdel03/6.S890/overcooked_ai"
+# Project paths - UPDATE THIS to your clone location
+export PROJECT_ROOT="$HOME/home/overcooked_ai"
 export HUMAN_AWARE_RL_DIR="${PROJECT_ROOT}/src/human_aware_rl"
 export HPC_SCRIPTS_DIR="${PROJECT_ROOT}/hpc_scripts"
 export LOGS_DIR="${HPC_SCRIPTS_DIR}/logs"
@@ -18,8 +22,8 @@ export BC_RESULTS_DIR="${HUMAN_AWARE_RL_DIR}/bc_runs"
 
 # Conda environment setup
 setup_conda() {
-    source /om2/user/mabdel03/anaconda/etc/profile.d/conda.sh
-    conda activate /om/scratch/Mon/mabdel03/conda_envs/MAL_env
+    module load miniforge
+    conda activate overcooked
 }
 
 # Call setup automatically when sourced
@@ -43,11 +47,10 @@ LAYOUTS=(
 # Seeds (paper seeds)
 SEEDS=(0 10 20 30 40)
 
-# SLURM defaults
+# SLURM defaults (partition intentionally omitted — uses cluster default)
 export SLURM_TIME="48:00:00"
 export SLURM_MEM="32G"
 export SLURM_CPUS="16"
-export SLURM_PARTITION="normal"
 
 # Logging
 log_start() {

@@ -5,7 +5,7 @@
 # This script submits all training jobs with proper dependencies:
 # 1. BC models (no dependencies)
 # 2. PPO_SP (no dependencies, runs in parallel with BC)
-# 3. PPO_BC, PPO_GAIL, PPO_AIRL (depend on BC completion)
+# 3. PPO_BC, PPO_GAIL (depend on BC completion)
 #
 # Usage:
 #   ./submit_all.sh              # Submit all jobs
@@ -151,7 +151,7 @@ if [ "$BC_ONLY" = false ]; then
     TOTAL_JOBS=$((TOTAL_JOBS + 25))
     echo ""
     
-    # PPO_BC, PPO_GAIL, PPO_AIRL depend on BC
+    # PPO_BC and PPO_GAIL depend on BC
     if [ "$PPO_ONLY" = true ]; then
         # No dependency if running PPO only (assumes BC done)
         BC_DEPENDENCY=""
@@ -162,10 +162,6 @@ if [ "$BC_ONLY" = false ]; then
     echo ""
     
     submit_ppo_with_partner "GAIL" "${BC_DEPENDENCY:-}"
-    TOTAL_JOBS=$((TOTAL_JOBS + 25))
-    echo ""
-    
-    submit_ppo_with_partner "AIRL" "${BC_DEPENDENCY:-}"
     TOTAL_JOBS=$((TOTAL_JOBS + 25))
     echo ""
 fi
