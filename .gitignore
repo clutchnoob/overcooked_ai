@@ -119,12 +119,15 @@ checkpoints/
 src/human_aware_rl/bc_runs/
 bc_runs/
 
-# PPO/RL training runs
+# PPO/RL training runs (results directories)
 ppo_runs/
 pbt_runs/
+ppo_hp/
+# Ignore ppo_sp/ and ppo_bc/ results directories, but NOT the hpc_scripts versions
 ppo_sp/
 ppo_bc/
-ppo_hp/
+!hpc_scripts/ppo_sp/
+!hpc_scripts/ppo_bc/
 
 # Weights & Biases
 wandb/
