@@ -21,9 +21,11 @@ export RESULTS_DIR="${HUMAN_AWARE_RL_DIR}/results"
 export BC_RESULTS_DIR="${HUMAN_AWARE_RL_DIR}/bc_runs"
 
 # Conda environment setup
+# Directly prepend the conda env bin to PATH.
+# This bypasses 'module load' and 'conda activate' which don't work on compute nodes.
 setup_conda() {
-    module load miniforge
-    conda activate overcooked
+    export PATH="$HOME/.conda/envs/overcooked/bin:$PATH"
+    export CONDA_DEFAULT_ENV="overcooked"
 }
 
 # Call setup automatically when sourced
