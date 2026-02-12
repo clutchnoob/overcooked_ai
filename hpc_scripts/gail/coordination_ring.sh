@@ -5,6 +5,7 @@
 #SBATCH --time=08:00:00
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=8
+#SBATCH --partition=sched_mit_hill,mit_normal,newnodes
 
 # Train GAIL model for coordination_ring layout
 

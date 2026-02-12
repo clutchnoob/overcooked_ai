@@ -5,6 +5,7 @@
 #SBATCH --time=04:00:00
 #SBATCH --mem=16G
 #SBATCH --cpus-per-task=8
+#SBATCH --partition=sched_mit_hill,mit_normal,newnodes
 
 # Train BC model for asymmetric_advantages layout
 

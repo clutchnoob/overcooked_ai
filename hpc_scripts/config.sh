@@ -47,8 +47,10 @@ LAYOUTS=(
 # Seeds (paper seeds)
 SEEDS=(0 10 20 30 40)
 
-# SLURM defaults (partition intentionally omitted — uses cluster default)
-export SLURM_TIME="48:00:00"
+# SLURM defaults
+# Multi-partition scheduling: job runs on whichever has a free node first
+export SLURM_PARTITION="sched_mit_hill,mit_normal,newnodes"
+export SLURM_TIME="12:00:00"
 export SLURM_MEM="32G"
 export SLURM_CPUS="16"
 
