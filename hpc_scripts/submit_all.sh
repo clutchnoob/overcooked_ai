@@ -17,6 +17,7 @@
 # Note: Not using set -e because ((COUNT++)) returns 1 when COUNT=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOGS_DIR="${SCRIPT_DIR}/logs"
 
 # Parse arguments
 BC_ONLY=false
@@ -46,13 +47,14 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Ensure logs directory exists
-mkdir -p "${SCRIPT_DIR}/logs"
+mkdir -p "${LOGS_DIR}"
 
 echo "============================================================================"
 echo "Overcooked AI - HPC Training Job Submission"
 echo "============================================================================"
 echo "Date: $(date)"
 echo "Script directory: ${SCRIPT_DIR}"
+echo "Logs directory: ${LOGS_DIR}"
 echo ""
 
 # Function to submit BC jobs
@@ -66,7 +68,10 @@ submit_bc() {
             echo "[DRY RUN] Would submit: bc/${layout}.sh"
             BC_JOB_IDS+=("DRY_RUN_${layout}")
         else
-            JOB_ID=$(sbatch --parsable "${SCRIPT_DIR}/bc/${layout}.sh")
+            JOB_ID=$(sbatch --parsable \
+                --output="${LOGS_DIR}/bc_${layout}_%j.out" \
+                --error="${LOGS_DIR}/bc_${layout}_%j.err" \
+                "${SCRIPT_DIR}/bc/${layout}.sh")
             BC_JOB_IDS+=("$JOB_ID")
             echo "  bc_${layout}: Job ${JOB_ID}"
         fi
@@ -91,7 +96,10 @@ submit_ppo_sp() {
             if [ "$DRY_RUN" = true ]; then
                 echo "[DRY RUN] Would submit: ppo_sp/${layout}_seed${seed}.sh"
             else
-                JOB_ID=$(sbatch --parsable "${SCRIPT_DIR}/ppo_sp/${layout}_seed${seed}.sh")
+                JOB_ID=$(sbatch --parsable \
+                    --output="${LOGS_DIR}/ppo_sp_${layout}_seed${seed}_%j.out" \
+                    --error="${LOGS_DIR}/ppo_sp_${layout}_seed${seed}_%j.err" \
+                    "${SCRIPT_DIR}/ppo_sp/${layout}_seed${seed}.sh")
                 echo "  ppo_sp_${layout}_s${seed}: Job ${JOB_ID}"
             fi
             ((COUNT++))
@@ -106,6 +114,7 @@ submit_ppo_sp() {
 submit_ppo_with_partner() {
     local MODEL_TYPE=$1
     local DEPENDENCY=$2
+    local MODEL_LOWER=$(echo ${MODEL_TYPE} | tr '[:upper:]' '[:lower:]')
     
     echo "Submitting PPO_${MODEL_TYPE} jobs (25 = 5 layouts × 5 seeds)..."
     if [ -n "$DEPENDENCY" ]; then
@@ -121,11 +130,14 @@ submit_ppo_with_partner() {
     COUNT=0
     for layout in cramped_room asymmetric_advantages coordination_ring forced_coordination counter_circuit; do
         for seed in 0 10 20 30 40; do
-            SCRIPT_PATH="${SCRIPT_DIR}/ppo_$(echo ${MODEL_TYPE} | tr '[:upper:]' '[:lower:]')/${layout}_seed${seed}.sh"
+            SCRIPT_PATH="${SCRIPT_DIR}/ppo_${MODEL_LOWER}/${layout}_seed${seed}.sh"
             if [ "$DRY_RUN" = true ]; then
-                echo "[DRY RUN] Would submit: ${SCRIPT_PATH}"
+                echo "[DRY RUN] Would submit: ppo_${MODEL_LOWER}/${layout}_seed${seed}.sh"
             else
-                JOB_ID=$(sbatch --parsable $DEP_FLAG "${SCRIPT_PATH}")
+                JOB_ID=$(sbatch --parsable \
+                    --output="${LOGS_DIR}/ppo_${MODEL_LOWER}_${layout}_seed${seed}_%j.out" \
+                    --error="${LOGS_DIR}/ppo_${MODEL_LOWER}_${layout}_seed${seed}_%j.err" \
+                    $DEP_FLAG "${SCRIPT_PATH}")
                 echo "  ppo_${MODEL_TYPE}_${layout}_s${seed}: Job ${JOB_ID}"
             fi
             ((COUNT++))
@@ -178,6 +190,6 @@ else
     echo "  squeue -u \$USER"
     echo ""
     echo "Check logs in:"
-    echo "  ${SCRIPT_DIR}/logs/"
+    echo "  ${LOGS_DIR}/"
 fi
 echo "============================================================================"

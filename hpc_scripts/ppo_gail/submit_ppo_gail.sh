@@ -1,50 +1,37 @@
 #!/bin/bash
 # ============================================================================
-# Submit all PPO GAIL training jobs
+# Submit all PPO GAIL training jobs (25 = 5 layouts × 5 seeds)
 # ============================================================================
-# This script submits SLURM jobs for PPO with GAIL partner training.
-# PPO GAIL uses GAIL (Generative Adversarial Imitation Learning) models
-# as training partners.
-#
-# Usage:
-#   cd hpc_scripts/ppo_gail
-#   ./submit_ppo_gail.sh
-#
-# Total jobs: 25 (5 layouts × 5 seeds)
-# ============================================================================
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+HPC_DIR="$(dirname "${SCRIPT_DIR}")"
+LOGS_DIR="${HPC_DIR}/logs"
 
-echo "=============================================="
-echo "Submitting PPO GAIL Training Jobs"
-echo "=============================================="
-echo ""
+mkdir -p "${LOGS_DIR}"
+
+echo "Submitting PPO GAIL jobs (25 = 5 layouts × 5 seeds)..."
+echo "============================================================================"
 
 LAYOUTS=("cramped_room" "asymmetric_advantages" "coordination_ring" "forced_coordination" "counter_circuit")
 SEEDS=(0 10 20 30 40)
 
-total_jobs=0
-submitted_jobs=0
-
+COUNT=0
 for layout in "${LAYOUTS[@]}"; do
     for seed in "${SEEDS[@]}"; do
-        script="${layout}_seed${seed}.sh"
+        script="${SCRIPT_DIR}/${layout}_seed${seed}.sh"
         if [ -f "$script" ]; then
-            echo "Submitting: $script"
-            sbatch "$script"
-            ((submitted_jobs++))
+            JOB_ID=$(sbatch --parsable \
+                --output="${LOGS_DIR}/ppo_gail_${layout}_seed${seed}_%j.out" \
+                --error="${LOGS_DIR}/ppo_gail_${layout}_seed${seed}_%j.err" \
+                "$script")
+            echo "  ppo_gail_${layout}_s${seed}: Job ${JOB_ID}"
+            ((COUNT++))
         else
             echo "WARNING: Script not found: $script"
         fi
-        ((total_jobs++))
     done
 done
 
-echo ""
-echo "=============================================="
-echo "Submitted $submitted_jobs / $total_jobs jobs"
-echo "=============================================="
-echo ""
+echo "============================================================================"
+echo "PPO_GAIL jobs submitted: ${COUNT}"
+echo "============================================================================"
 echo "To check job status: squeue -u \$USER"
-echo "To cancel all jobs: scancel -u \$USER"
