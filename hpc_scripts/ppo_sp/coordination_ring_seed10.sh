@@ -9,7 +9,8 @@
 
 # PPO Self-Play Training: coordination_ring (seed=10)
 
-source "$(dirname "$0")/../config.sh"
+# HPC_CONFIG is set by submit scripts; fallback to HOME-based path
+source "${HPC_CONFIG:-$HOME/home/overcooked_ai/hpc_scripts/config.sh}"
 
 log_start
 

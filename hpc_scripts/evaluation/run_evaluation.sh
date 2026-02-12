@@ -26,7 +26,8 @@ set -eo pipefail
 # Configuration
 # ============================================================================
 # Source shared config (sets PROJECT_ROOT, conda, PYTHONPATH, etc.)
-source "$(dirname "$0")/../config.sh"
+# HPC_CONFIG is set by submit scripts; fallback to HOME-based path
+source "${HPC_CONFIG:-$HOME/home/overcooked_ai/hpc_scripts/config.sh}"
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
