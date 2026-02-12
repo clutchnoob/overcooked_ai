@@ -453,8 +453,8 @@ def main():
         local_overrides["total_timesteps"] = args.timesteps
     
     if args.num_training_iters:
-        # Convert iterations to timesteps (each iter = 12000 timesteps from paper)
-        local_overrides["total_timesteps"] = args.num_training_iters * 12000
+        # Convert iterations to timesteps (each iter = 24000 timesteps: 60 envs * 400 steps)
+        local_overrides["total_timesteps"] = args.num_training_iters * 24000
     
     if args.use_early_stopping:
         local_overrides["use_early_stopping"] = True

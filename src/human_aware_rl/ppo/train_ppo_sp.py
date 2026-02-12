@@ -416,11 +416,11 @@ def main():
             "early_stop_patience": 10,
         }
     elif args.fast:
-        # Fast mode: use 5M timesteps (matches successful paper reproduction)
+        # Fast mode: use 10M timesteps (416 iters * 24000 batch = ~10M)
         local_overrides = {
-            "total_timesteps": 5000000,  # 5M (matches paper reproduction)
-            "num_workers": 60,  # CORRECTED: 60 envs for proper batch size
-            "use_early_stopping": False,  # CORRECTED: Disable for paper reproduction
+            "total_timesteps": 10000000,  # 10M timesteps
+            "num_workers": 60,  # 60 envs for 24000 batch size
+            "use_early_stopping": False,  # Disable for paper reproduction
             "save_interval": 50,
             "log_interval": 1,
         }
@@ -429,8 +429,8 @@ def main():
         local_overrides["total_timesteps"] = args.timesteps
     
     if args.num_training_iters:
-        # Convert iterations to timesteps (each iter = 12000 timesteps from paper)
-        local_overrides["total_timesteps"] = args.num_training_iters * 12000
+        # Convert iterations to timesteps (each iter = 24000 timesteps: 60 envs * 400 steps)
+        local_overrides["total_timesteps"] = args.num_training_iters * 24000
     
     if args.use_early_stopping:
         local_overrides["use_early_stopping"] = True

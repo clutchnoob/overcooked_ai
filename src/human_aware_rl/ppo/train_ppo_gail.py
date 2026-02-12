@@ -343,7 +343,7 @@ def main():
     if args.timesteps:
         total_timesteps = args.timesteps
     if args.num_training_iters:
-        total_timesteps = args.num_training_iters * 12000
+        total_timesteps = args.num_training_iters * 24000
     
     # Extract run_suffix from results_dir (e.g., "run4" from "results/ppo_gail_run4")
     run_suffix = None
@@ -358,7 +358,7 @@ def main():
             # Set layout-specific timesteps if not overridden
             layout_timesteps = total_timesteps
             if layout_timesteps is None:
-                layout_timesteps = PAPER_ITERS[layout] * 12000
+                layout_timesteps = PAPER_ITERS[layout] * 24000
             
             # Compute GAIL model directory
             gail_model_dir = None
@@ -390,7 +390,7 @@ def main():
         # Set layout-specific timesteps if not overridden
         layout_timesteps = total_timesteps
         if layout_timesteps is None:
-            layout_timesteps = PAPER_ITERS[args.layout] * 12000
+            layout_timesteps = PAPER_ITERS[args.layout] * 24000
         
         # Compute GAIL model directory
         gail_model_dir = None

@@ -74,7 +74,7 @@ PAPER_COMMON_PARAMS = {
     
     # Evaluation
     "evaluation_interval": 50,
-    "evaluation_num_games": 5,  # Was 1
+    "evaluation_num_games": 50,  # Increased from 5 for stable eval metrics
 }
 
 # Entropy coefficient configuration
@@ -124,8 +124,8 @@ PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
         "gae_lambda": 0.98,
         "vf_coef": 0.5,  # CORRECTED: Was 0.1, must be 0.5 for proper value learning
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 2.5e6,  # CORRECTED: Matches original ppo_sp config
-        "num_training_iters": 416,  # ~5M steps / 12000 batch = 416 (was 550)
+        "reward_shaping_horizon": 5e6,  # Scaled with 10M training budget
+        "num_training_iters": 416,  # 416 iters * 24000 batch = ~10M timesteps
     },
     "asymmetric_advantages": {
         "learning_rate": 8e-4,  # CORRECTED
@@ -135,7 +135,7 @@ PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
         "gae_lambda": 0.98,
         "vf_coef": 0.5,  # CORRECTED
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 2.5e6,  # CORRECTED
+        "reward_shaping_horizon": 5e6,  # Scaled with 10M training budget
         "num_training_iters": 416,
     },
     "coordination_ring": {
@@ -146,7 +146,7 @@ PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
         "gae_lambda": 0.98,
         "vf_coef": 0.5,  # CORRECTED
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 2.5e6,  # CORRECTED
+        "reward_shaping_horizon": 5e6,  # Scaled with 10M training budget
         "num_training_iters": 416,
     },
     "forced_coordination": {
@@ -157,8 +157,8 @@ PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
         "gae_lambda": 0.98,
         "vf_coef": 0.5,  # CORRECTED: Was 0.1, critical fix
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 2.5e6,  # CORRECTED: Matches original
-        "num_training_iters": 416,  # ~5M timesteps
+        "reward_shaping_horizon": 5e6,  # Scaled with 10M training budget
+        "num_training_iters": 416,
     },
     "counter_circuit": {
         "learning_rate": 8e-4,  # CORRECTED
@@ -168,8 +168,8 @@ PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
         "gae_lambda": 0.98,
         "vf_coef": 0.5,  # CORRECTED: Was 0.1, critical fix
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 2.5e6,  # CORRECTED
-        "num_training_iters": 416,  # ~5M timesteps
+        "reward_shaping_horizon": 5e6,  # Scaled with 10M training budget
+        "num_training_iters": 416,
     },
 }
 
@@ -277,10 +277,9 @@ def get_ppo_sp_config(layout: str, seed: int = 0, **overrides) -> Dict[str, Any]
         # Disable entropy annealing since it's fixed (Table 2)
         config["use_entropy_annealing"] = False
     
-    # Set total_timesteps directly (5M matches successful paper reproduction)
-    # Note: Original formula was num_training_iters * train_batch_size
-    # but we override to 5M for consistency with verified results
-    config["total_timesteps"] = 5000000  # 5M timesteps
+    # Set total_timesteps: 416 iters * 24000 batch_size = ~10M timesteps
+    # Previous 5M was a miscalculation (used 12000 batch instead of 24000)
+    config["total_timesteps"] = 10000000  # 10M timesteps
     
     config.update(overrides)
     return config

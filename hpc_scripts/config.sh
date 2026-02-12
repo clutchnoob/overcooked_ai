@@ -55,7 +55,7 @@ SEEDS=(0 10 20 30 40)
 export SLURM_PARTITION="mit_normal"
 export SLURM_TIME="12:00:00"
 export SLURM_MEM="32G"
-export SLURM_CPUS="16"
+export SLURM_CPUS="4"
 
 # Logging
 log_start() {
