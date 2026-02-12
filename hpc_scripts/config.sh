@@ -50,8 +50,9 @@ LAYOUTS=(
 SEEDS=(0 10 20 30 40)
 
 # SLURM defaults
-# Multi-partition scheduling: job runs on whichever has a free node first
-export SLURM_PARTITION="sched_mit_hill,mit_normal,newnodes"
+# Use mit_normal only — older partitions (sched_mit_hill, newnodes) have
+# glibc 2.17 which is too old for JAX/PyTorch dependencies.
+export SLURM_PARTITION="mit_normal"
 export SLURM_TIME="12:00:00"
 export SLURM_MEM="32G"
 export SLURM_CPUS="16"

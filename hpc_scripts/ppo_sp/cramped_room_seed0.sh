@@ -4,8 +4,8 @@
 #SBATCH --error=../logs/ppo_sp_cramped_room_seed0_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --mem=32G
-#SBATCH --cpus-per-task=16
-#SBATCH --partition=sched_mit_hill,mit_normal,newnodes
+#SBATCH --cpus-per-task=4
+#SBATCH --partition=mit_normal
 
 # PPO Self-Play Training: cramped_room (seed=0)
 

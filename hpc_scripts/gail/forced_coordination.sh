@@ -4,8 +4,8 @@
 #SBATCH --error=../logs/%x_%j.err
 #SBATCH --time=08:00:00
 #SBATCH --mem=32G
-#SBATCH --cpus-per-task=8
-#SBATCH --partition=sched_mit_hill,mit_normal,newnodes
+#SBATCH --cpus-per-task=4
+#SBATCH --partition=mit_normal
 
 # Train GAIL model for forced_coordination layout
 
