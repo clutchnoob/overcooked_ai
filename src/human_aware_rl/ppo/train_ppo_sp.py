@@ -87,7 +87,7 @@ def train_ppo_sp(
         print(f"Layout: {layout} -> {config_dict['layout_name']}")
         print(f"Seed: {seed}")
         print(f"Total timesteps: {config_dict['total_timesteps']:,}")
-        print(f"Num envs: {config_dict.get('num_workers', 60)}")
+        print(f"Num envs: {config_dict.get('num_workers', 30)}")
         print(f"Learning rate: {config_dict['learning_rate']}")
         print(f"VF coef: {config_dict['vf_coef']}")
         print(f"Ent coef: {config_dict.get('entropy_coeff_start', 0.01)}")
@@ -145,8 +145,8 @@ def train_ppo_sp(
     np.random.seed(seed)
     
     # Create PPO config
-    # CORRECTED: Use 60 envs to match original paper batch size (60 envs x 400 steps = 24000)
-    num_envs = config_dict.get("num_workers", 60)
+    # Paper Table 2: 30 envs * 400 steps = 12,000 batch, minibatch_size = 2000
+    num_envs = config_dict.get("num_workers", 30)
     
     ppo_config = PPOConfig(
         layout_name=config_dict["layout_name"],
@@ -416,10 +416,9 @@ def main():
             "early_stop_patience": 10,
         }
     elif args.fast:
-        # Fast mode: use 10M timesteps (416 iters * 24000 batch = ~10M)
+        # Fast mode: use 10M timesteps (833 iters * 12000 batch = ~10M)
         local_overrides = {
             "total_timesteps": 10000000,  # 10M timesteps
-            "num_workers": 60,  # 60 envs for 24000 batch size
             "use_early_stopping": False,  # Disable for paper reproduction
             "save_interval": 50,
             "log_interval": 1,
@@ -429,8 +428,8 @@ def main():
         local_overrides["total_timesteps"] = args.timesteps
     
     if args.num_training_iters:
-        # Convert iterations to timesteps (each iter = 24000 timesteps: 60 envs * 400 steps)
-        local_overrides["total_timesteps"] = args.num_training_iters * 24000
+        # Convert iterations to timesteps (each iter = 12000 timesteps: 30 envs * 400 steps)
+        local_overrides["total_timesteps"] = args.num_training_iters * 12000
     
     if args.use_early_stopping:
         local_overrides["use_early_stopping"] = True

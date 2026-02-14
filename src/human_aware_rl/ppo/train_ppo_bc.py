@@ -124,12 +124,23 @@ def train_ppo_bc(
     
     if verbose:
         print("\n" + "="*60)
-        print(f"Training PPO with BC Partner")
+        print(f"Training PPO with BC Partner (Paper Table 3)")
         print("="*60)
         print(f"Layout: {layout} -> {config_dict['layout_name']}")
         print(f"Seed: {seed}")
         print(f"BC model: {bc_model_dir}")
         print(f"Total timesteps: {config_dict['total_timesteps']:,}")
+        print(f"Learning rate: {config_dict['learning_rate']}")
+        lr_factor = config_dict.get('lr_annealing_factor', 1.0)
+        if lr_factor > 1.0:
+            final_lr = config_dict['learning_rate'] / lr_factor
+            print(f"LR annealing: factor={lr_factor} ({config_dict['learning_rate']:.2e} -> {final_lr:.2e})")
+        else:
+            print(f"LR annealing: disabled (constant)")
+        print(f"VF coef: {config_dict['vf_coef']}")
+        print(f"Reward shaping horizon: {config_dict.get('reward_shaping_horizon', 'inf'):,.0f}")
+        print(f"Num minibatches: {config_dict.get('num_minibatches', 6)}")
+        print(f"Num envs: {config_dict.get('num_workers', 30)} (batch={config_dict.get('num_workers', 30)*400:,})")
         print(f"BC schedule: {config_dict['bc_schedule']}")
         print(f"Results dir: {results_dir}")
         print("="*60 + "\n")
@@ -159,8 +170,8 @@ def train_ppo_bc(
                              for i in range(0, len(bc_schedule), 2)]
     
     # Create PPO config
-    # Use 32 envs for better sample efficiency
-    num_envs = min(config_dict.get("num_workers", 32), 32)
+    # Use num_workers from config (Paper Table 3: 30 envs for 12,000 batch)
+    num_envs = config_dict.get("num_workers", 30)
     
     ppo_config = PPOConfig(
         layout_name=config_dict["layout_name"],
@@ -184,10 +195,14 @@ def train_ppo_bc(
         reward_shaping_factor=config_dict.get("reward_shaping_factor", 1.0),
         reward_shaping_horizon=config_dict.get("reward_shaping_horizon", float('inf')),
         use_phi=config_dict.get("use_phi", False),
-        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.2),
-        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.1),
-        entropy_coeff_horizon=config_dict.get("entropy_coeff_horizon", 3e5),
-        use_entropy_annealing=True,
+        # Entropy: use values from config (fixed at 0.01 per paper)
+        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.01),
+        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.01),
+        entropy_coeff_horizon=config_dict.get("entropy_coeff_horizon", 0),
+        use_entropy_annealing=config_dict.get("use_entropy_annealing", False),
+        # LR annealing: Paper Table 3 uses factor-based annealing for PPO_BC
+        use_lr_annealing=config_dict.get("use_lr_annealing", False),
+        lr_annealing_factor=config_dict.get("lr_annealing_factor", 1.0),
         num_epochs=config_dict.get("num_sgd_iter", 8),
         log_interval=config_dict.get("log_interval", 1),
         save_interval=config_dict.get("save_interval", 50),
@@ -441,8 +456,7 @@ def main():
         }
     elif args.fast:
         local_overrides = {
-            "total_timesteps": 1000000,  # 1M instead of paper's ~8M
-            "num_workers": 32,
+            "total_timesteps": 1000000,  # 1M instead of paper's 10M
             "use_early_stopping": True,
             "early_stop_patience": 100,
             "save_interval": 25,
@@ -453,8 +467,8 @@ def main():
         local_overrides["total_timesteps"] = args.timesteps
     
     if args.num_training_iters:
-        # Convert iterations to timesteps (each iter = 24000 timesteps: 60 envs * 400 steps)
-        local_overrides["total_timesteps"] = args.num_training_iters * 24000
+        # Convert iterations to timesteps (each iter = 12000 timesteps: 30 envs * 400 steps)
+        local_overrides["total_timesteps"] = args.num_training_iters * 12000
     
     if args.use_early_stopping:
         local_overrides["use_early_stopping"] = True

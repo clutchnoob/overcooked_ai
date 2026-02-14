@@ -3,7 +3,7 @@
 #SBATCH --output=../logs/ppo_bc_cramped_room_seed40_%j.out
 #SBATCH --error=../logs/ppo_bc_cramped_room_seed40_%j.err
 #SBATCH --time=12:00:00
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --cpus-per-task=4
 #SBATCH --partition=mit_normal
 

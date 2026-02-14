@@ -205,7 +205,10 @@ def train_bc_model(model_dir, bc_params, verbose=False):
         loss = keras.losses.SparseCategoricalCrossentropy(from_logits=True)
         metrics = ["sparse_categorical_accuracy"]
     model.compile(
-        optimizer=keras.optimizers.Adam(training_params["learning_rate"]),
+        optimizer=keras.optimizers.Adam(
+            training_params["learning_rate"],
+            epsilon=training_params.get("adam_epsilon", 1e-8),  # Paper Table 1
+        ),
         loss=loss,
         metrics=metrics,
     )

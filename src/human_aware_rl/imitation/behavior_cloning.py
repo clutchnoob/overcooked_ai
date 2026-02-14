@@ -51,6 +51,7 @@ DEFAULT_TRAINING_PARAMS = {
     "validation_split": 0.15,
     "batch_size": 64,
     "learning_rate": 1e-3,
+    "adam_epsilon": 1e-8,  # Paper Table 1: explicit for reproducibility
     "use_class_weights": False,
     "patience": 20,  # Early stopping patience
     "lr_patience": 3,  # LR scheduler patience
@@ -438,7 +439,11 @@ def train_bc_model(
     model = model.to(device)
     
     # Setup optimizer and scheduler
-    optimizer = torch.optim.Adam(model.parameters(), lr=training_params["learning_rate"])
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=training_params["learning_rate"],
+        eps=training_params.get("adam_epsilon", 1e-8),  # Paper Table 1
+    )
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
         mode='min',

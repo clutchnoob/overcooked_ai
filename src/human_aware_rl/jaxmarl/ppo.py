@@ -70,8 +70,10 @@ class PPOConfig:
     kl_coeff: float = 0.2  # KL divergence coefficient
     
     # Learning rate annealing
-    # NOTE: Original paper uses LR_ANNEALING=1 which means NO annealing (constant LR)
-    use_lr_annealing: bool = False  # Paper uses constant LR
+    # NOTE: Original paper PPO_SP uses LR_ANNEALING=1 which means NO annealing (constant LR)
+    # PPO_BC/PPO_HP uses factor-based annealing: LR decays from initial to initial/factor
+    use_lr_annealing: bool = False  # Paper SP uses constant LR; BC uses factor-based
+    lr_annealing_factor: float = 1.0  # Factor for LR decay: final_lr = initial_lr / factor (1.0 = no decay)
     
     # Value function clipping (original baselines uses this)
     clip_vf: bool = True  # Clip value function updates
@@ -871,8 +873,15 @@ class PPOTrainer:
             
             # Update learning rate if annealing is enabled
             if self.config.use_lr_annealing:
-                frac = 1.0 - self.total_timesteps / self.config.total_timesteps
-                new_lr = self.config.learning_rate * frac
+                progress = self.total_timesteps / self.config.total_timesteps
+                factor = self.config.lr_annealing_factor
+                if factor > 1.0:
+                    # Factor-based annealing: LR decays from initial_lr to initial_lr / factor
+                    # Paper Table 3 uses this for PPO_BC (e.g., factor=3 means LR/3 at end)
+                    new_lr = self.config.learning_rate * (1.0 - progress * (1.0 - 1.0 / factor))
+                else:
+                    # Legacy linear-to-zero annealing (factor=1 or not set)
+                    new_lr = self.config.learning_rate * (1.0 - progress)
                 # Update optimizer with new learning rate
                 self.train_state = self._update_learning_rate(self.train_state, new_lr)
             
@@ -936,8 +945,12 @@ class PPOTrainer:
                 
                 # Calculate current learning rate for logging
                 if self.config.use_lr_annealing:
-                    lr_frac = 1.0 - self.total_timesteps / self.config.total_timesteps
-                    current_lr = self.config.learning_rate * lr_frac
+                    progress = self.total_timesteps / self.config.total_timesteps
+                    factor = self.config.lr_annealing_factor
+                    if factor > 1.0:
+                        current_lr = self.config.learning_rate * (1.0 - progress * (1.0 - 1.0 / factor))
+                    else:
+                        current_lr = self.config.learning_rate * (1.0 - progress)
                 else:
                     current_lr = self.config.learning_rate
                 

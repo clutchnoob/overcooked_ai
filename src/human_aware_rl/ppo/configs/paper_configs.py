@@ -32,7 +32,8 @@ LAYOUT_TO_ENV = {
 }
 
 # Common parameters across all experiments (from paper)
-# CORRECTED: Based on successful paper reproduction and original TF codebase analysis
+# Paper Tables 2 & 3: batch_size = num_minibatches * minibatch_size = 6 * 2000 = 12,000
+# This implies 30 parallel environments (30 envs * 400 steps = 12,000)
 PAPER_COMMON_PARAMS = {
     # Network architecture
     "num_hidden_layers": 3,
@@ -43,17 +44,17 @@ PAPER_COMMON_PARAMS = {
     "cell_size": 256,
     
     # Training batch settings
-    # CORRECTED: Paper uses 60 envs x 400 steps = 24000 per update
-    "train_batch_size": 24000,  # Was 12000
-    "num_minibatches": 6,       # Was 10 - gives minibatch_size = 4000
+    # Paper Table 2: num_minibatches=6, minibatch_size=2000 -> batch=12,000
+    # 30 envs * 400 steps = 12,000
+    "train_batch_size": 12000,
+    "num_minibatches": 6,
     "rollout_fragment_length": 400,
     "num_sgd_iter": 8,
     
     # Entropy coefficient
-    # CORRECTED: Original TF baselines use ent_coef=0.01, NOT 0.1
-    # The 0.1 value was misread from paper - actual default in baselines is 0.01
-    "entropy_coeff_start": 0.01,  # CORRECTED from 0.1
-    "entropy_coeff_end": 0.01,    # CORRECTED from 0.1
+    # Original TF baselines use ent_coef=0.01
+    "entropy_coeff_start": 0.01,
+    "entropy_coeff_end": 0.01,
     "entropy_coeff_horizon": 0,   # No annealing for self-play
     "use_entropy_annealing": False,
     
@@ -66,15 +67,15 @@ PAPER_COMMON_PARAMS = {
     "reward_shaping_factor": 1.0,
     
     # Number of parallel workers
-    # CORRECTED: Use 60 envs for larger batch size (matches original)
-    "num_workers": 60,  # Was 30
+    # Paper Table 2: batch=12,000 / 400 steps = 30 envs
+    "num_workers": 30,
     
     # Observation encoding
-    "use_legacy_encoding": True,  # ADDED: Use 20-channel legacy encoding
+    "use_legacy_encoding": True,  # Paper uses 20-channel legacy encoding
     
     # Evaluation
     "evaluation_interval": 50,
-    "evaluation_num_games": 50,  # Increased from 5 for stable eval metrics
+    "evaluation_num_games": 50,
 }
 
 # Entropy coefficient configuration
@@ -109,67 +110,64 @@ LAYOUT_ENTROPY_CONFIGS = {
 }
 
 
-# PPO Self-Play Hyperparameters (per-layout)
-# CORRECTED: Validated against successful paper reproduction and original TF codebase
-# Key corrections from original (incorrect) values:
-# - vf_coef: 0.5 (was 0.1) - Critical for value function learning
-# - learning_rate: 0.0008 (was 0.001) - Matches original ppo_sp_random0 config
-# - ent_coef: 0.01 (was 0.1) - Prevents policy from staying too random
+# PPO Self-Play Hyperparameters (per-layout) -- Paper Table 2
+# batch_size = 6 * 2000 = 12,000 (30 envs * 400 steps)
+# num_training_iters = total_timesteps / batch_size = 10M / 12000 = 833
 PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
     "cramped_room": {
-        "learning_rate": 8e-4,  # CORRECTED: 0.0008 matches original TF config
+        "learning_rate": 1e-3,          # Paper Table 2
         "gamma": 0.99,
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.5,  # CORRECTED: Was 0.1, must be 0.5 for proper value learning
+        "vf_coef": 0.5,                 # Paper Table 2
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 5e6,  # Scaled with 10M training budget
-        "num_training_iters": 416,  # 416 iters * 24000 batch = ~10M timesteps
+        "reward_shaping_horizon": 2.5e6, # Paper Table 2
+        "num_training_iters": 833,       # 833 iters * 12000 batch = ~10M timesteps
     },
     "asymmetric_advantages": {
-        "learning_rate": 8e-4,  # CORRECTED
+        "learning_rate": 1e-3,           # Paper Table 2
         "gamma": 0.99,
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.5,  # CORRECTED
+        "vf_coef": 0.5,                 # Paper Table 2
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 5e6,  # Scaled with 10M training budget
-        "num_training_iters": 416,
+        "reward_shaping_horizon": 2.5e6, # Paper Table 2
+        "num_training_iters": 833,
     },
     "coordination_ring": {
-        "learning_rate": 8e-4,  # CORRECTED
+        "learning_rate": 6e-4,           # Paper Table 2 (lower than others!)
         "gamma": 0.99,
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.5,  # CORRECTED
+        "vf_coef": 0.5,                 # Paper Table 2
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 5e6,  # Scaled with 10M training budget
-        "num_training_iters": 416,
+        "reward_shaping_horizon": 3.5e6, # Paper Table 2 (higher than others!)
+        "num_training_iters": 833,
     },
     "forced_coordination": {
-        "learning_rate": 8e-4,  # CORRECTED
+        "learning_rate": 8e-4,           # Paper Table 2
         "gamma": 0.99,
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.5,  # CORRECTED: Was 0.1, critical fix
+        "vf_coef": 0.5,                 # Paper Table 2
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 5e6,  # Scaled with 10M training budget
-        "num_training_iters": 416,
+        "reward_shaping_horizon": 2.5e6, # Paper Table 2
+        "num_training_iters": 833,
     },
     "counter_circuit": {
-        "learning_rate": 8e-4,  # CORRECTED
+        "learning_rate": 8e-4,           # Paper Table 2
         "gamma": 0.99,
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.5,  # CORRECTED: Was 0.1, critical fix
+        "vf_coef": 0.5,                 # Paper Table 2
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 5e6,  # Scaled with 10M training budget
-        "num_training_iters": 416,
+        "reward_shaping_horizon": 2.5e6, # Paper Table 2
+        "num_training_iters": 833,
     },
 }
 
@@ -225,20 +223,111 @@ PBT_COMMON_PARAMS = {
 }
 
 
-# PPO_BC configurations (PPO trained with BC partner)
-# Uses same hyperparameters as self-play but with BC schedule
-PAPER_PPO_BC_CONFIGS: Dict[str, Dict[str, Any]] = {}
-for layout in PAPER_LAYOUTS:
-    PAPER_PPO_BC_CONFIGS[layout] = {
-        **PAPER_PPO_SP_CONFIGS[layout],
-        # BC schedule: start with 100% BC, anneal to 0%
-        # Format: [(timestep, bc_factor), ...]
+# PPO_BC / PPO_HP configurations (PPO trained with BC or Human Proxy partner)
+# Paper Table 3: These have DISTINCT hyperparameters from PPO_SP!
+# Key differences: per-layout LR, LR annealing factor, VF coef, reward shaping
+# horizon, self-play annealing schedule, num_minibatches, and batch size.
+#
+# Batch size: num_minibatches * minibatch_size = 12,000 for all layouts
+# This implies 30 parallel environments (30 envs * 400 steps = 12,000)
+PAPER_PPO_BC_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "cramped_room": {
+        "learning_rate": 1e-3,
+        "lr_annealing_factor": 3,       # LR decays from 1e-3 to 3.33e-4
+        "gamma": 0.99,
+        "clip_eps": 0.05,
+        "max_grad_norm": 0.1,
+        "gae_lambda": 0.98,
+        "vf_coef": 0.5,
+        "kl_coeff": 0.2,
+        "reward_shaping_horizon": 1e6,  # Paper Table 3
+        "num_minibatches": 10,          # Paper Table 3 (minibatch_size=1200)
+        # Self-play annealing [5e5, 3e6]: BC at 100% until 5e5, anneals to 0% by 3e6
         "bc_schedule": [
-            (0, 1.0),           # Start with 100% BC partner
-            (8e6, 0.0),         # Anneal to 0% over 8M timesteps
-            (float('inf'), 0.0) # Stay at 0%
+            (0, 1.0),
+            (5e5, 1.0),
+            (3e6, 0.0),
         ],
-    }
+    },
+    "asymmetric_advantages": {
+        "learning_rate": 1e-3,
+        "lr_annealing_factor": 3,       # LR decays from 1e-3 to 3.33e-4
+        "gamma": 0.99,
+        "clip_eps": 0.05,
+        "max_grad_norm": 0.1,
+        "gae_lambda": 0.98,
+        "vf_coef": 0.5,
+        "kl_coeff": 0.2,
+        "reward_shaping_horizon": 6e6,  # Paper Table 3
+        "num_minibatches": 12,          # Paper Table 3 (minibatch_size=1000)
+        # Self-play annealing [1e6, 7e6]: BC at 100% until 1e6, anneals to 0% by 7e6
+        "bc_schedule": [
+            (0, 1.0),
+            (1e6, 1.0),
+            (7e6, 0.0),
+        ],
+    },
+    "coordination_ring": {
+        "learning_rate": 1e-3,
+        "lr_annealing_factor": 1.5,     # LR decays from 1e-3 to 6.67e-4
+        "gamma": 0.99,
+        "clip_eps": 0.05,
+        "max_grad_norm": 0.1,
+        "gae_lambda": 0.98,
+        "vf_coef": 0.5,
+        "kl_coeff": 0.2,
+        "reward_shaping_horizon": 5e6,  # Paper Table 3
+        "num_minibatches": 15,          # Paper Table 3 (minibatch_size=800)
+        # Self-play annealing [2e6, 6e6]: BC at 100% until 2e6, anneals to 0% by 6e6
+        "bc_schedule": [
+            (0, 1.0),
+            (2e6, 1.0),
+            (6e6, 0.0),
+        ],
+    },
+    "forced_coordination": {
+        "learning_rate": 1.5e-3,
+        "lr_annealing_factor": 2,       # LR decays from 1.5e-3 to 7.5e-4
+        "gamma": 0.99,
+        "clip_eps": 0.05,
+        "max_grad_norm": 0.1,
+        "gae_lambda": 0.98,
+        "vf_coef": 0.1,                 # Paper Table 3 (NOT 0.5!)
+        "kl_coeff": 0.2,
+        "reward_shaping_horizon": 4e6,  # Paper Table 3
+        "num_minibatches": 15,          # Paper Table 3 (minibatch_size=800)
+        # Self-play annealing: N/A -- BC partner stays at 100% throughout training
+        "bc_schedule": [
+            (0, 1.0),
+            (float('inf'), 1.0),
+        ],
+    },
+    "counter_circuit": {
+        "learning_rate": 1.5e-3,
+        "lr_annealing_factor": 3,       # LR decays from 1.5e-3 to 5e-4
+        "gamma": 0.99,
+        "clip_eps": 0.05,
+        "max_grad_norm": 0.1,
+        "gae_lambda": 0.98,
+        "vf_coef": 0.1,                 # Paper Table 3 (NOT 0.5!)
+        "kl_coeff": 0.2,
+        "reward_shaping_horizon": 4e6,  # Paper Table 3
+        "num_minibatches": 15,          # Paper Table 3 (minibatch_size=800)
+        # Self-play annealing [1e6, 4e6]: BC at 100% until 1e6, anneals to 0% by 4e6
+        "bc_schedule": [
+            (0, 1.0),
+            (1e6, 1.0),
+            (4e6, 0.0),
+        ],
+    },
+}
+
+# PPO_BC common params (overrides from PAPER_COMMON_PARAMS)
+# Paper Table 3 uses 30 envs (batch_size=12,000 = 30 * 400)
+PAPER_PPO_BC_COMMON = {
+    "num_workers": 30,       # 30 envs * 400 steps = 12,000 batch (Paper Table 3)
+    "train_batch_size": 12000,
+}
 
 
 def get_ppo_sp_config(layout: str, seed: int = 0, **overrides) -> Dict[str, Any]:
@@ -277,9 +366,8 @@ def get_ppo_sp_config(layout: str, seed: int = 0, **overrides) -> Dict[str, Any]
         # Disable entropy annealing since it's fixed (Table 2)
         config["use_entropy_annealing"] = False
     
-    # Set total_timesteps: 416 iters * 24000 batch_size = ~10M timesteps
-    # Previous 5M was a miscalculation (used 12000 batch instead of 24000)
-    config["total_timesteps"] = 10000000  # 10M timesteps
+    # Total timesteps: 833 iters * 12000 batch_size = ~10M timesteps
+    config["total_timesteps"] = 10_000_000  # 10M timesteps
     
     config.update(overrides)
     return config
@@ -315,7 +403,11 @@ def get_pbt_config(layout: str, **overrides) -> Dict[str, Any]:
 
 def get_ppo_bc_config(layout: str, seed: int = 0, bc_model_dir: str = None, **overrides) -> Dict[str, Any]:
     """
-    Get PPO_BC configuration for a layout.
+    Get PPO_BC configuration for a layout (Paper Table 3).
+    
+    PPO_BC has DISTINCT hyperparameters from PPO_SP, including per-layout
+    learning rates, LR annealing factors, VF coefficients, reward shaping
+    horizons, BC schedules, and minibatch settings.
     
     Args:
         layout: Layout name (paper name)
@@ -331,20 +423,191 @@ def get_ppo_bc_config(layout: str, seed: int = 0, bc_model_dir: str = None, **ov
     
     env_layout = LAYOUT_TO_ENV.get(layout, layout)
     
+    # Start with common params, then override with BC-specific common and per-layout
     config = {
         **PAPER_COMMON_PARAMS,
-        **PAPER_PPO_BC_CONFIGS[layout],
+        **PAPER_PPO_BC_COMMON,       # Override num_workers=30, batch=12000
+        **PAPER_PPO_BC_CONFIGS[layout],  # Per-layout Table 3 values
         "layout_name": env_layout,
         "seed": seed,
         "experiment_name": f"ppo_bc_{layout}_seed{seed}",
         "bc_model_dir": bc_model_dir,
+        # PPO_BC uses LR annealing (factor-based, Paper Table 3)
+        "use_lr_annealing": True,
     }
     
-    # Convert num_training_iters to total_timesteps
-    config["total_timesteps"] = int(
-        config["num_training_iters"] * config["train_batch_size"]
-    )
+    # Apply layout-specific entropy config (same as SP: fixed at 0.01)
+    if layout in LAYOUT_ENTROPY_CONFIGS:
+        entropy_config = LAYOUT_ENTROPY_CONFIGS[layout]
+        config["entropy_coeff_start"] = entropy_config["entropy_coeff_start"]
+        config["entropy_coeff_end"] = entropy_config["entropy_coeff_end"]
+        config["entropy_coeff_horizon"] = entropy_config["entropy_coeff_horizon"]
+        config["use_entropy_annealing"] = False
     
+    # Total timesteps: 10M (same budget as SP)
+    config["total_timesteps"] = 10_000_000
+    
+    config.update(overrides)
+    return config
+
+
+# =============================================================================
+# PPO_GAIL Configurations
+# =============================================================================
+
+# PPO_GAIL_controlled: Uses EXACT same HPs as PPO_BC (Paper Table 3),
+# only swapping the BC partner for a GAIL partner.
+# This isolates the partner model quality as the sole independent variable.
+PAPER_PPO_GAIL_CONFIGS = PAPER_PPO_BC_CONFIGS  # Same per-layout HPs
+PAPER_PPO_GAIL_COMMON = PAPER_PPO_BC_COMMON    # Same batch/env settings
+
+
+def get_ppo_gail_config(layout: str, seed: int = 0, gail_model_dir: str = None,
+                        **overrides) -> Dict[str, Any]:
+    """
+    Get PPO_GAIL_controlled configuration for a layout.
+
+    Uses the EXACT same hyperparameters as PPO_BC (Paper Table 3) so that the
+    only experimental variable is the partner model (GAIL instead of BC).
+
+    Args:
+        layout: Layout name (paper name)
+        seed: Random seed
+        gail_model_dir: Path to GAIL model directory
+        **overrides: Additional parameter overrides
+
+    Returns:
+        Configuration dictionary
+    """
+    if layout not in PAPER_PPO_GAIL_CONFIGS:
+        raise ValueError(f"Unknown layout: {layout}. Available: {list(PAPER_PPO_GAIL_CONFIGS.keys())}")
+
+    env_layout = LAYOUT_TO_ENV.get(layout, layout)
+
+    # Identical to get_ppo_bc_config except experiment_name and model_dir key
+    config = {
+        **PAPER_COMMON_PARAMS,
+        **PAPER_PPO_GAIL_COMMON,
+        **PAPER_PPO_GAIL_CONFIGS[layout],
+        "layout_name": env_layout,
+        "seed": seed,
+        "experiment_name": f"ppo_gail_{layout}_seed{seed}",
+        "gail_model_dir": gail_model_dir,
+        "use_lr_annealing": True,
+    }
+
+    # Entropy: fixed at 0.01, same as SP and BC
+    if layout in LAYOUT_ENTROPY_CONFIGS:
+        entropy_config = LAYOUT_ENTROPY_CONFIGS[layout]
+        config["entropy_coeff_start"] = entropy_config["entropy_coeff_start"]
+        config["entropy_coeff_end"] = entropy_config["entropy_coeff_end"]
+        config["entropy_coeff_horizon"] = entropy_config["entropy_coeff_horizon"]
+        config["use_entropy_annealing"] = False
+
+    config["total_timesteps"] = 10_000_000
+
+    config.update(overrides)
+    return config
+
+
+# PPO_GAIL_optimized: Bayesian-optimized HPs, but with controlled training
+# budget (10M steps) and proper reward shaping horizon (from Table 3).
+# Used as an ablation to show the ceiling of GAIL with tuned HPs.
+BAYESIAN_OPTIMIZED_GAIL_PARAMS = {
+    "learning_rate": 1.63e-4,
+    "gamma": 0.964,
+    "gae_lambda": 0.6,
+    "clip_eps": 0.132,
+    "vf_coef": 0.00995,
+    "max_grad_norm": 0.247,
+    "kl_coeff": 0.197,
+    "entropy_coeff_start": 0.2,
+    "entropy_coeff_end": 0.1,
+    "entropy_coeff_horizon": 3e5,
+    "use_entropy_annealing": True,
+    "num_minibatches": 10,
+}
+
+
+def get_ppo_gail_optimized_config(layout: str, seed: int = 0,
+                                  gail_model_dir: str = None,
+                                  **overrides) -> Dict[str, Any]:
+    """
+    Get PPO_GAIL_optimized configuration (ablation: Bayesian-optimized HPs).
+
+    Uses Bayesian-optimized hyperparameters but matches PPO_BC on:
+    - Total timesteps (10M)
+    - Reward shaping horizon (from Paper Table 3, per layout)
+    - Partner schedule (from Paper Table 3, per layout)
+
+    This isolates the HP-tuning effect from the training-budget effect.
+
+    Args:
+        layout: Layout name
+        seed: Random seed
+        gail_model_dir: Path to GAIL model directory
+        **overrides: Additional parameter overrides
+    """
+    if layout not in PAPER_PPO_BC_CONFIGS:
+        raise ValueError(f"Unknown layout: {layout}")
+
+    env_layout = LAYOUT_TO_ENV.get(layout, layout)
+    bc_layout_cfg = PAPER_PPO_BC_CONFIGS[layout]
+
+    config = {
+        **PAPER_COMMON_PARAMS,
+        **BAYESIAN_OPTIMIZED_GAIL_PARAMS,
+        "layout_name": env_layout,
+        "seed": seed,
+        "experiment_name": f"ppo_gail_opt_{layout}_seed{seed}",
+        "gail_model_dir": gail_model_dir,
+        # Structural controls: match PPO_BC so only HPs differ
+        "num_workers": 32,  # Bayesian config used 32 envs
+        "reward_shaping_horizon": bc_layout_cfg["reward_shaping_horizon"],
+        "bc_schedule": bc_layout_cfg["bc_schedule"],
+        "total_timesteps": 10_000_000,
+        "use_lr_annealing": False,  # Bayesian config used constant LR
+    }
+
+    config.update(overrides)
+    return config
+
+
+# PPO_SP_optimized: Bayesian-optimized HPs with self-play (no partner).
+# Ablation to separate the HP-tuning effect from the GAIL-partner effect.
+def get_ppo_sp_optimized_config(layout: str, seed: int = 0,
+                                **overrides) -> Dict[str, Any]:
+    """
+    Get PPO_SP with Bayesian-optimized HPs (ablation).
+
+    Tests whether the Bayesian-optimized HPs alone (without any partner model)
+    explain the performance improvement. If SP_optimized matches GAIL_optimized,
+    the HPs are the driver. If SP_optimized << GAIL_optimized, GAIL is the key.
+
+    Args:
+        layout: Layout name
+        seed: Random seed
+        **overrides: Additional parameter overrides
+    """
+    if layout not in PAPER_PPO_SP_CONFIGS:
+        raise ValueError(f"Unknown layout: {layout}")
+
+    env_layout = LAYOUT_TO_ENV.get(layout, layout)
+    sp_layout_cfg = PAPER_PPO_SP_CONFIGS[layout]
+
+    config = {
+        **PAPER_COMMON_PARAMS,
+        **BAYESIAN_OPTIMIZED_GAIL_PARAMS,
+        "layout_name": env_layout,
+        "seed": seed,
+        "experiment_name": f"ppo_sp_opt_{layout}_seed{seed}",
+        "num_workers": 32,
+        "reward_shaping_horizon": sp_layout_cfg["reward_shaping_horizon"],
+        "bc_schedule": [(0, 0.0), (float('inf'), 0.0)],  # No partner
+        "total_timesteps": 10_000_000,
+        "use_lr_annealing": False,
+    }
+
     config.update(overrides)
     return config
 
@@ -394,6 +657,75 @@ def print_config_summary():
             f"{cfg['reward_shaping_horizon']:.0e}",
             f"{cfg['total_env_steps']:.0e}",
         ))
+
+
+    print("\n")
+    print("="*80)
+    print("Paper PPO_BC Configurations (Table 3)")
+    print("="*80)
+    
+    headers = ["Layout", "LR", "LR_Factor", "VF", "RewHorizon", "MiniBatches", "BC Schedule"]
+    row_format = "{:<20}" + "{:<10}" * 5 + "{:<30}"
+    
+    print(row_format.format(*headers))
+    print("-"*110)
+    
+    for layout in PAPER_LAYOUTS:
+        cfg = PAPER_PPO_BC_CONFIGS[layout]
+        schedule = cfg['bc_schedule']
+        # Format schedule: show start/end of annealing
+        if schedule[-1][1] > 0:
+            sched_str = "N/A (100% BC always)"
+        else:
+            start = [s for s in schedule if s[1] == 1.0][-1][0]
+            end = [s for s in schedule if s[1] == 0.0][0][0]
+            sched_str = f"[{start:.0e}, {end:.0e}]"
+        
+        print(row_format.format(
+            layout,
+            f"{cfg['learning_rate']:.1e}",
+            f"{cfg['lr_annealing_factor']}",
+            f"{cfg['vf_coef']}",
+            f"{cfg['reward_shaping_horizon']:.0e}",
+            str(cfg['num_minibatches']),
+            sched_str,
+        ))
+
+
+    print("\n")
+    print("="*80)
+    print("PPO_GAIL_controlled Configurations (same as PPO_BC Table 3, partner=GAIL)")
+    print("="*80)
+    print("  -> Uses identical HPs to PPO_BC. Only the partner model differs (GAIL vs BC).")
+    for layout in PAPER_LAYOUTS:
+        cfg = get_ppo_gail_config(layout, seed=0, gail_model_dir="<placeholder>")
+        print(f"  {layout}: LR={cfg['learning_rate']:.1e}, VF={cfg.get('vf_coef', 0.5)}, "
+              f"RewHorizon={cfg['reward_shaping_horizon']:.0e}, "
+              f"Minibatches={cfg.get('num_minibatches', 6)}, "
+              f"LR_Factor={cfg.get('lr_annealing_factor', 'N/A')}")
+
+    print("\n")
+    print("="*80)
+    print("PPO_GAIL_optimized Configurations (Bayesian HPs, controlled budget)")
+    print("="*80)
+    print(f"  Bayesian base HPs: LR={BAYESIAN_OPTIMIZED_GAIL_PARAMS['learning_rate']:.2e}, "
+          f"VF={BAYESIAN_OPTIMIZED_GAIL_PARAMS['vf_coef']:.5f}, "
+          f"Ent=[{BAYESIAN_OPTIMIZED_GAIL_PARAMS['entropy_coeff_start']}->"
+          f"{BAYESIAN_OPTIMIZED_GAIL_PARAMS['entropy_coeff_end']}]")
+    for layout in PAPER_LAYOUTS:
+        cfg = get_ppo_gail_optimized_config(layout, seed=0, gail_model_dir="<placeholder>")
+        print(f"  {layout}: RewHorizon={cfg['reward_shaping_horizon']:.0e}, "
+              f"Total={cfg['total_timesteps']/1e6:.0f}M")
+
+    print("\n")
+    print("="*80)
+    print("PPO_SP_optimized Configurations (Bayesian HPs, self-play, ablation)")
+    print("="*80)
+    for layout in PAPER_LAYOUTS:
+        cfg = get_ppo_sp_optimized_config(layout, seed=0)
+        print(f"  {layout}: RewHorizon={cfg['reward_shaping_horizon']:.0e}, "
+              f"Total={cfg['total_timesteps']/1e6:.0f}M, "
+              f"bc_schedule={cfg['bc_schedule']}")
 
 
 if __name__ == "__main__":

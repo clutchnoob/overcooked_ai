@@ -1,417 +1,651 @@
 """
 Train PPO agents with GAIL partner (PPO_GAIL).
 
-Similar to PPO_BC but uses GAIL-trained policy as the partner instead of BC.
-The GAIL agent may provide a better human proxy for training.
+Similar to PPO_BC but uses a GAIL-trained policy as the partner instead of BC.
+Supports two modes:
+
+  --controlled (default): Uses the EXACT same PPO hyperparameters as PPO_BC
+      (Paper Table 3). The partner model is the sole independent variable.
+      This is the primary, fair comparison against PPO_BC.
+
+  --optimized: Uses Bayesian-optimized hyperparameters but matches PPO_BC on
+      reward shaping horizon and total timesteps (10M). This is an ablation
+      that shows the ceiling of GAIL with tuned HPs.
+
+Usage:
+    # Fair comparison (default: controlled mode, same HPs as PPO_BC)
+    python -m human_aware_rl.ppo.train_ppo_gail --layout cramped_room --seed 0
+
+    # All layouts with all seeds (controlled mode)
+    python -m human_aware_rl.ppo.train_ppo_gail --all_layouts --seeds 0,10,20,30,40
+
+    # Optimized ablation mode
+    python -m human_aware_rl.ppo.train_ppo_gail --layout cramped_room --optimized
+
+    # Custom GAIL model directory
+    python -m human_aware_rl.ppo.train_ppo_gail --layout cramped_room \\
+        --gail_model_base_dir path/to/gail_models
 """
 
-import os
 import argparse
+import os
+import sys
 import json
-from typing import Optional, List
+from datetime import datetime
+from typing import Dict, List, Optional, Any
+
 import numpy as np
 
+# Check if JAX is available
+try:
+    import jax
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
+
 from human_aware_rl.data_dir import DATA_DIR
+from human_aware_rl.ppo.configs.paper_configs import (
+    PAPER_LAYOUTS,
+    LAYOUT_TO_ENV,
+    get_ppo_gail_config,
+    get_ppo_gail_optimized_config,
+    PAPER_PPO_GAIL_CONFIGS,
+    BAYESIAN_OPTIMIZED_GAIL_PARAMS,
+)
 
 # Output directories
 PPO_GAIL_SAVE_DIR = os.path.join(DATA_DIR, "ppo_gail_runs")
 
-# Layouts
-LAYOUTS = [
-    "cramped_room",
-    "asymmetric_advantages",
-    "coordination_ring",
-    "forced_coordination",
-    "counter_circuit",
-]
+# Default GAIL model paths
+try:
+    from human_aware_rl.imitation.gail import GAIL_SAVE_DIR
+except ImportError:
+    GAIL_SAVE_DIR = os.path.join(DATA_DIR, "gail_runs")
 
-# Layout name mapping (paper name -> environment name)
-# IMPORTANT: Use LEGACY layouts (same as PPO SP) for consistent results!
-# All experiments must use the same layout version as per the original paper.
-# Legacy layouts have explicit MDP params: cook_time=20, num_items_for_soup=3, delivery_reward=20
-LAYOUT_TO_ENV = {
-    "cramped_room": "cramped_room_legacy",
-    "asymmetric_advantages": "asymmetric_advantages_legacy",
-    "coordination_ring": "coordination_ring_legacy",
-    "forced_coordination": "random0_legacy",
-    "counter_circuit": "random3_legacy",
+DEFAULT_GAIL_MODEL_PATHS = {
+    layout: os.path.join(GAIL_SAVE_DIR, layout)
+    for layout in PAPER_LAYOUTS
 }
 
 
-def train_ppo_gail(
-    layout: str,
-    seed: int = 0,
-    total_timesteps: Optional[int] = None,
-    early_stop_patience: int = 100,
-    gail_model_dir: Optional[str] = None,
-    results_dir: str = "results/ppo_gail",
-    run_suffix: Optional[str] = None,
-    verbose: bool = True,
-):
+def _load_gail_agent(gail_model_dir: str, layout: str, env_layout: str):
     """
-    Train PPO with GAIL partner for a specific layout.
-    
+    Load a GAIL model and wrap it as an agent compatible with PPOTrainer.
+
     Args:
-        layout: Layout name (paper name, will be mapped to env name)
-        seed: Random seed
-        total_timesteps: Override total timesteps (None uses paper config)
-        early_stop_patience: Updates without improvement before stopping
-        gail_model_dir: Path to GAIL model directory
-        results_dir: Directory to save PPO checkpoints (e.g., results/ppo_gail_run4)
-        run_suffix: Suffix for final model save dir (e.g., "run4" for ppo_gail_runs_run4)
-        verbose: Print training progress
+        gail_model_dir: Path to GAIL model directory for this layout
+        layout: Paper layout name
+        env_layout: Environment layout name (legacy)
+
+    Returns:
+        GAILAgentWrapper instance that can be used as PPOTrainer.bc_agent
     """
     import torch
-    from human_aware_rl.jaxmarl.ppo import PPOConfig, PPOTrainer
-    from human_aware_rl.imitation.gail import GAIL_SAVE_DIR, GAILPolicy
-    from human_aware_rl.imitation.bc_agent import BCAgent
-    from human_aware_rl.imitation.behavior_cloning import load_bc_model
+    from human_aware_rl.imitation.gail import GAILPolicy
     from overcooked_ai_py.agents.benchmarking import AgentEvaluator
     from overcooked_ai_py.mdp.overcooked_env import DEFAULT_ENV_PARAMS
     from overcooked_ai_py.mdp.actions import Action
-    
-    # Get environment layout name
-    env_layout = LAYOUT_TO_ENV.get(layout, layout)
-    
-    # Build config directly for JAX PPOConfig
-    # CRITICAL: Set unique experiment_name and results_dir to prevent overwriting
-    experiment_name = f"ppo_gail_{layout}_seed{seed}"
-    
-    config_dict = {
-        "layout_name": env_layout,
-        "horizon": 400,
-        "num_envs": 32,
-        "old_dynamics": True,
-        "total_timesteps": total_timesteps if total_timesteps else 8_000_000,
-        "learning_rate": 1.63e-4,  # Paper value
-        "num_steps": 400,
-        "num_minibatches": 10,
-        "num_epochs": 8,
-        "gamma": 0.964,  # Paper value
-        "gae_lambda": 0.6,  # Paper value
-        "clip_eps": 0.132,  # Paper value
-        "ent_coef": 0.2,  # Paper uses entropy annealing
-        "vf_coef": 0.00995,  # Paper value
-        "max_grad_norm": 0.247,  # Paper value
-        "kl_coeff": 0.197,  # Paper value
-        "entropy_coeff_start": 0.2,
-        "entropy_coeff_end": 0.1,
-        "entropy_coeff_horizon": 3e5,
-        "use_entropy_annealing": True,
-        "num_hidden_layers": 3,
-        "hidden_dim": 64,
-        "num_filters": 25,
-        "num_conv_layers": 3,
-        "use_lstm": False,
-        "reward_shaping_factor": 1.0,
-        "use_phi": False,
-        "bc_schedule": [(0, 1.0), (8_000_000, 0.0)],  # Anneal GAIL partner
-        "early_stop_patience": early_stop_patience,
-        "seed": seed,
-        # CRITICAL: These must be set to prevent all jobs overwriting same directory
-        "experiment_name": experiment_name,
-        "results_dir": results_dir,
-    }
-    
-    # Load GAIL model as partner
-    if gail_model_dir is None:
-        gail_model_dir = os.path.join(GAIL_SAVE_DIR, layout)
-    
+
     gail_checkpoint_path = os.path.join(gail_model_dir, "model.pt")
-    
+
     if not os.path.exists(gail_checkpoint_path):
-        print(f"ERROR: No GAIL model found at {gail_checkpoint_path}")
-        print(f"Run: python -m human_aware_rl.imitation.gail --layout {layout}")
-        return None
-    
+        raise FileNotFoundError(
+            f"No GAIL model found at {gail_checkpoint_path}. "
+            f"Run: python -m human_aware_rl.imitation.gail --layout {layout}"
+        )
+
     # Setup environment to get dimensions
     ae = AgentEvaluator.from_layout_name(
         mdp_params={"layout_name": env_layout, "old_dynamics": True},
         env_params=DEFAULT_ENV_PARAMS,
     )
-    
+
     def featurize_fn(state):
         return ae.env.featurize_state_mdp(state)
-    
+
     # Get state/action dims
     dummy_state = ae.env.mdp.get_standard_start_state()
     obs_shape = featurize_fn(dummy_state)[0].shape
     state_dim = int(np.prod(obs_shape))
     action_dim = len(Action.ALL_ACTIONS)
-    
+
     # Load GAIL policy
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     gail_policy = GAILPolicy(
         state_dim=state_dim,
         action_dim=action_dim,
         hidden_dim=64,
     ).to(device)
-    
+
     checkpoint = torch.load(gail_checkpoint_path, map_location=device)
     gail_policy.load_state_dict(checkpoint["policy_state_dict"])
     gail_policy.eval()
-    
-    # Create GAIL agent wrapper (similar to BCAgent but for GAIL)
+
     class GAILAgentWrapper:
-        """Wrapper for GAIL policy to work with PPO training."""
-        
+        """Wrapper for GAIL policy to work with PPO training (same interface as BCAgent)."""
+
         def __init__(self, policy, featurize_fn, stochastic=True):
             self.policy = policy
             self.featurize_fn = featurize_fn
             self.stochastic = stochastic
             self.agent_index = 1  # GAIL partner is usually player 1
-            
+
         def action(self, state):
             """Get action for state. Returns (action, info) like BCAgent."""
             obs = self.featurize_fn(state)[self.agent_index]
             obs_flat = obs.flatten()
             obs_tensor = torch.FloatTensor(obs_flat).unsqueeze(0).to(device)
-            
+
             with torch.no_grad():
-                # GAILPolicy.forward() returns (logits, value)
                 logits, _ = self.policy(obs_tensor)
                 action_probs = torch.softmax(logits, dim=-1)
-                
+
                 if self.stochastic:
                     action_idx = torch.multinomial(action_probs, 1).item()
                 else:
                     action_idx = action_probs.argmax(dim=-1).item()
-            
+
             action = Action.INDEX_TO_ACTION[action_idx]
             info = {"action_probs": action_probs.cpu().numpy()}
             return action, info
-        
+
         def set_agent_index(self, index):
             self.agent_index = index
-            
+
         def reset(self):
             pass
-    
-    gail_agent = GAILAgentWrapper(gail_policy, featurize_fn, stochastic=True)
-    
-    # Create output directory for final model copies
-    # Use run-specific directory if run_suffix is provided (e.g., ppo_gail_runs_run4)
-    if run_suffix:
-        ppo_gail_save_dir = os.path.join(DATA_DIR, f"ppo_gail_runs_{run_suffix}")
+
+    return GAILAgentWrapper(gail_policy, featurize_fn, stochastic=True)
+
+
+def train_ppo_gail(
+    layout: str,
+    seed: int = 0,
+    gail_model_dir: Optional[str] = None,
+    results_dir: str = "results/ppo_gail",
+    verbose: bool = True,
+    use_wandb: bool = False,
+    wandb_project: str = "overcooked-ai",
+    optimized: bool = False,
+    **overrides
+) -> Dict[str, Any]:
+    """
+    Train a PPO agent with GAIL partner for a specific layout.
+
+    Args:
+        layout: Layout name (paper name, e.g., 'cramped_room')
+        seed: Random seed
+        gail_model_dir: Path to GAIL model directory (default: use default path)
+        results_dir: Directory to save results
+        verbose: Whether to print progress
+        use_wandb: Whether to use Weights & Biases logging
+        wandb_project: WandB project name
+        optimized: If True, use Bayesian-optimized HPs (ablation). Default False
+                   uses Paper Table 3 HPs (fair controlled comparison).
+        **overrides: Additional config overrides
+
+    Returns:
+        Training results dictionary
+    """
+    if not JAX_AVAILABLE:
+        raise ImportError(
+            "JAX is required for PPO training. "
+            "Install with: pip install jax jaxlib flax optax"
+        )
+
+    from human_aware_rl.jaxmarl.ppo import PPOConfig, PPOTrainer
+
+    # Use default GAIL model path if not specified
+    if gail_model_dir is None:
+        gail_model_dir = DEFAULT_GAIL_MODEL_PATHS.get(layout)
+        if gail_model_dir is None:
+            raise ValueError(f"No default GAIL model path for layout: {layout}")
+
+    # Get configuration based on mode
+    mode_name = "optimized" if optimized else "controlled"
+    if optimized:
+        config_dict = get_ppo_gail_optimized_config(
+            layout=layout,
+            seed=seed,
+            gail_model_dir=gail_model_dir,
+            results_dir=results_dir,
+            **overrides
+        )
     else:
-        ppo_gail_save_dir = PPO_GAIL_SAVE_DIR
-    run_dir = os.path.join(ppo_gail_save_dir, layout, f"seed_{seed}")
-    os.makedirs(run_dir, exist_ok=True)
-    
+        config_dict = get_ppo_gail_config(
+            layout=layout,
+            seed=seed,
+            gail_model_dir=gail_model_dir,
+            results_dir=results_dir,
+            **overrides
+        )
+
+    # Get environment layout name
+    env_layout = config_dict["layout_name"]
+
     if verbose:
-        print(f"\n{'='*60}")
-        print(f"Training PPO_GAIL: {layout} (seed={seed})")
-        print(f"{'='*60}")
-        print(f"Environment: {env_layout}")
+        print("\n" + "=" * 60)
+        print(f"Training PPO_GAIL ({mode_name} mode)")
+        print("=" * 60)
+        print(f"Layout: {layout} -> {env_layout}")
+        print(f"Seed: {seed}")
         print(f"GAIL model: {gail_model_dir}")
-        print(f"Output: {run_dir}")
-        print(f"Config: {config_dict}")
-        print()
-    
-    # Create PPO config
-    config = PPOConfig(**config_dict)
-    
-    # Create trainer and inject GAIL agent as BC partner
-    trainer = PPOTrainer(config)
-    trainer.bc_agent = gail_agent  # Use GAIL instead of BC
-    
-    # Train
-    metrics = trainer.train()
-    
-    # Copy latest checkpoint to run_dir
-    import shutil
-    checkpoint_dir = os.path.join(
-        trainer.config.results_dir,
-        trainer.config.experiment_name,
+        print(f"Total timesteps: {config_dict['total_timesteps']:,}")
+        print(f"Learning rate: {config_dict['learning_rate']}")
+        lr_factor = config_dict.get('lr_annealing_factor', 1.0)
+        use_lr_ann = config_dict.get('use_lr_annealing', False)
+        if use_lr_ann and lr_factor > 1.0:
+            final_lr = config_dict['learning_rate'] / lr_factor
+            print(f"LR annealing: factor={lr_factor} "
+                  f"({config_dict['learning_rate']:.2e} -> {final_lr:.2e})")
+        else:
+            print(f"LR annealing: disabled (constant)")
+        print(f"VF coef: {config_dict['vf_coef']}")
+        print(f"Reward shaping horizon: {config_dict.get('reward_shaping_horizon', 'inf'):,.0f}")
+        print(f"Num minibatches: {config_dict.get('num_minibatches', 6)}")
+        num_envs = config_dict.get('num_workers', 30)
+        print(f"Num envs: {num_envs} (batch={num_envs * 400:,})")
+        print(f"Entropy: start={config_dict.get('entropy_coeff_start', 0.01)}, "
+              f"end={config_dict.get('entropy_coeff_end', 0.01)}, "
+              f"annealing={config_dict.get('use_entropy_annealing', False)}")
+        print(f"BC schedule: {config_dict['bc_schedule']}")
+        print(f"Results dir: {results_dir}")
+        if optimized:
+            print(f"  [OPTIMIZED MODE: Bayesian HPs with controlled budget]")
+        else:
+            print(f"  [CONTROLLED MODE: Paper Table 3 HPs, partner=GAIL]")
+        print("=" * 60 + "\n")
+
+    # Initialize WandB if enabled
+    if use_wandb:
+        try:
+            import wandb
+            wandb.init(
+                project=wandb_project,
+                name=config_dict["experiment_name"],
+                config=config_dict,
+            )
+        except ImportError:
+            print("Warning: wandb not available, skipping logging")
+            use_wandb = False
+
+    # Set random seeds
+    np.random.seed(seed)
+
+    # Convert bc_schedule to proper format
+    bc_schedule = config_dict.get("bc_schedule", [(0, 1.0), (8e6, 0.0), (float('inf'), 0.0)])
+    if isinstance(bc_schedule[0], tuple):
+        bc_schedule_tuples = bc_schedule
+    else:
+        bc_schedule_tuples = [(int(bc_schedule[i]), float(bc_schedule[i + 1]))
+                              for i in range(0, len(bc_schedule), 2)]
+
+    # Create PPO config (mirrors train_ppo_bc.py PPOConfig creation)
+    num_envs = config_dict.get("num_workers", 30)
+
+    ppo_config = PPOConfig(
+        layout_name=config_dict["layout_name"],
+        horizon=config_dict.get("horizon", 400),
+        num_envs=num_envs,
+        num_steps=config_dict.get("rollout_fragment_length", 400),
+        total_timesteps=config_dict["total_timesteps"],
+        learning_rate=config_dict["learning_rate"],
+        gamma=config_dict["gamma"],
+        gae_lambda=config_dict["gae_lambda"],
+        clip_eps=config_dict["clip_eps"],
+        vf_coef=config_dict["vf_coef"],
+        max_grad_norm=config_dict["max_grad_norm"],
+        num_minibatches=config_dict.get("num_minibatches", 10),
+        num_hidden_layers=config_dict.get("num_hidden_layers", 3),
+        hidden_dim=config_dict.get("hidden_dim", 64),
+        num_filters=config_dict.get("num_filters", 25),
+        num_conv_layers=config_dict.get("num_conv_layers", 3),
+        use_lstm=config_dict.get("use_lstm", False),
+        cell_size=config_dict.get("cell_size", 256),
+        reward_shaping_factor=config_dict.get("reward_shaping_factor", 1.0),
+        reward_shaping_horizon=config_dict.get("reward_shaping_horizon", float('inf')),
+        use_phi=config_dict.get("use_phi", False),
+        # Entropy
+        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.01),
+        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.01),
+        entropy_coeff_horizon=config_dict.get("entropy_coeff_horizon", 0),
+        use_entropy_annealing=config_dict.get("use_entropy_annealing", False),
+        # LR annealing
+        use_lr_annealing=config_dict.get("use_lr_annealing", False),
+        lr_annealing_factor=config_dict.get("lr_annealing_factor", 1.0),
+        num_epochs=config_dict.get("num_sgd_iter", 8),
+        log_interval=config_dict.get("log_interval", 1),
+        save_interval=config_dict.get("save_interval", 50),
+        eval_interval=config_dict.get("eval_interval", 25),
+        early_stop_patience=config_dict.get("early_stop_patience", 100),
+        bc_schedule=bc_schedule_tuples,
+        bc_model_dir=gail_model_dir,  # Used for bookkeeping, actual agent injected below
+        verbose=verbose,
+        results_dir=results_dir,
+        experiment_name=config_dict["experiment_name"],
+        seed=seed,
     )
-    if os.path.exists(checkpoint_dir):
-        # Find latest checkpoint
-        checkpoints = sorted([d for d in os.listdir(checkpoint_dir) if d.startswith("checkpoint_")])
-        if checkpoints:
-            latest = os.path.join(checkpoint_dir, checkpoints[-1])
-            for f in os.listdir(latest):
-                shutil.copy2(os.path.join(latest, f), os.path.join(run_dir, f))
-    
-    with open(os.path.join(run_dir, "config.json"), "w") as f:
-        json.dump(config_dict, f, indent=2)
-    
-    with open(os.path.join(run_dir, "metrics.json"), "w") as f:
-        json.dump({k: float(v) if isinstance(v, (int, float, np.floating)) else v 
-                   for k, v in metrics.items()}, f, indent=2)
-    
-    if verbose:
-        print(f"\nTraining complete!")
-        print(f"Final reward: {metrics.get('final_mean_reward', 'N/A')}")
-        print(f"Saved to: {run_dir}")
-    
-    return metrics
+
+    # Load GAIL agent
+    gail_agent = _load_gail_agent(gail_model_dir, layout, env_layout)
+
+    # Create trainer and inject GAIL agent as the BC partner
+    trainer = PPOTrainer(ppo_config)
+    trainer.bc_agent = gail_agent  # Use GAIL instead of BC
+
+    # Train
+    results = trainer.train()
+
+    # Save final config
+    config_path = os.path.join(
+        results_dir,
+        config_dict["experiment_name"],
+        "config.json"
+    )
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, "w") as f:
+        json_config = {k: v for k, v in config_dict.items()
+                       if not callable(v) and k != "bc_schedule"}
+        json_config["bc_schedule"] = str(bc_schedule_tuples)
+        json_config["gail_model_dir"] = gail_model_dir
+        json_config["mode"] = mode_name
+        json.dump(json_config, f, indent=2)
+
+    # Finish WandB
+    if use_wandb:
+        import wandb
+        wandb.finish()
+
+    return results
 
 
 def train_all_layouts(
-    seeds: List[int] = [0],
-    total_timesteps: Optional[int] = None,
-    early_stop_patience: int = 100,
+    seeds: List[int],
+    layouts: Optional[List[str]] = None,
     results_dir: str = "results/ppo_gail",
-    run_suffix: Optional[str] = None,
     verbose: bool = True,
-):
-    """Train PPO_GAIL for all layouts."""
-    results = {}
-    
-    for layout in LAYOUTS:
+    use_wandb: bool = False,
+    wandb_project: str = "overcooked-ai",
+    gail_model_base_dir: Optional[str] = None,
+    optimized: bool = False,
+) -> Dict[str, Dict[int, Dict[str, Any]]]:
+    """
+    Train PPO_GAIL agents for all layouts with multiple seeds.
+
+    Args:
+        seeds: List of random seeds
+        layouts: List of layouts to train (default: all paper layouts)
+        results_dir: Directory to save results
+        verbose: Whether to print progress
+        use_wandb: Whether to use WandB logging
+        wandb_project: WandB project name
+        gail_model_base_dir: Base directory for GAIL models
+        optimized: If True, use optimized ablation mode
+
+    Returns:
+        Nested dict: {layout: {seed: results}}
+    """
+    if layouts is None:
+        layouts = PAPER_LAYOUTS
+
+    all_results = {}
+    total_runs = len(layouts) * len(seeds)
+    current_run = 0
+
+    for layout in layouts:
+        all_results[layout] = {}
+
+        # Get GAIL model path for this layout
+        if gail_model_base_dir:
+            gail_model_dir = os.path.join(gail_model_base_dir, layout)
+        else:
+            gail_model_dir = DEFAULT_GAIL_MODEL_PATHS.get(layout)
+
         for seed in seeds:
+            current_run += 1
+
+            if verbose:
+                print(f"\n{'#' * 60}")
+                print(f"# Run {current_run}/{total_runs}: {layout} (seed={seed})")
+                print(f"{'#' * 60}")
+
             try:
-                metrics = train_ppo_gail(
+                results = train_ppo_gail(
                     layout=layout,
                     seed=seed,
-                    total_timesteps=total_timesteps,
-                    early_stop_patience=early_stop_patience,
+                    gail_model_dir=gail_model_dir,
                     results_dir=results_dir,
-                    run_suffix=run_suffix,
                     verbose=verbose,
+                    use_wandb=use_wandb,
+                    wandb_project=wandb_project,
+                    optimized=optimized,
                 )
-                results[f"{layout}_seed{seed}"] = metrics
+                all_results[layout][seed] = results
+
             except Exception as e:
-                print(f"ERROR training {layout} seed {seed}: {e}")
+                print(f"Error training {layout} with seed {seed}: {e}")
                 import traceback
                 traceback.print_exc()
-                results[f"{layout}_seed{seed}"] = {"error": str(e)}
-    
-    return results
+                all_results[layout][seed] = {"error": str(e)}
+
+    return all_results
+
+
+def print_summary(results: Dict[str, Dict[int, Dict[str, Any]]]):
+    """Print a summary of training results."""
+    print("\n" + "=" * 60)
+    print("PPO_GAIL TRAINING SUMMARY")
+    print("=" * 60)
+
+    for layout, seed_results in results.items():
+        print(f"\n{layout}:")
+        print("-" * 40)
+
+        for seed, result in seed_results.items():
+            if "error" in result:
+                print(f"  Seed {seed}: ERROR - {result['error']}")
+            else:
+                timesteps = result.get("total_timesteps", "N/A")
+                print(f"  Seed {seed}: {timesteps:,} timesteps completed")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Train PPO with GAIL partner (PPO_GAIL)",
+        description="Train PPO agents with GAIL partners for Overcooked AI",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--layout", type=str, choices=LAYOUTS, help="Layout name")
-    parser.add_argument("--all_layouts", action="store_true", help="Train all layouts")
-    parser.add_argument("--seed", type=int, default=0, help="Random seed")
-    parser.add_argument("--seeds", type=str, default="0,10,20,30,40", 
-                        help="Comma-separated list of seeds")
-    parser.add_argument("--results_dir", type=str, default="results/ppo_gail",
-                        help="Directory to save results")
-    parser.add_argument("--fast", action="store_true",
-                        help="Fast training mode (1M timesteps, early stopping)")
-    parser.add_argument("--local", action="store_true",
-                        help="Local testing mode (10k timesteps)")
-    parser.add_argument("--timesteps", type=int, default=None,
-                        help="Override total timesteps")
-    parser.add_argument("--num_training_iters", type=int, default=None,
-                        help="Number of training iterations (overrides layout default)")
-    parser.add_argument("--use_early_stopping", action="store_true",
-                        help="Enable early stopping (disabled by default for paper reproduction)")
-    parser.add_argument("--patience", type=int, default=100,
-                        help="Early stopping patience (if enabled)")
-    parser.add_argument("--gail_model_base_dir", type=str, default=None,
-                        help="Base directory for GAIL models (default: DATA_DIR/gail_runs)")
-    parser.add_argument("--quiet", action="store_true", help="Reduce verbosity")
-    
+
+    parser.add_argument(
+        "--layout",
+        type=str,
+        default=None,
+        choices=PAPER_LAYOUTS,
+        help="Train a single layout"
+    )
+
+    parser.add_argument(
+        "--all_layouts",
+        action="store_true",
+        help="Train all 5 paper layouts"
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Random seed (for single layout)"
+    )
+
+    parser.add_argument(
+        "--seeds",
+        type=str,
+        default="0,10,20,30,40",
+        help="Comma-separated list of seeds (for all layouts)"
+    )
+
+    # Mode selection
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--controlled",
+        action="store_true",
+        default=True,
+        help="Controlled mode: exact PPO_BC Table 3 HPs, partner=GAIL (default)"
+    )
+    mode_group.add_argument(
+        "--optimized",
+        action="store_true",
+        help="Optimized ablation: Bayesian HPs with controlled budget (10M, proper shaping)"
+    )
+
+    # GAIL model paths
+    parser.add_argument(
+        "--gail_model_dir",
+        type=str,
+        default=None,
+        help="Path to GAIL model directory (for single layout)"
+    )
+
+    parser.add_argument(
+        "--gail_model_base_dir",
+        type=str,
+        default=None,
+        help="Base directory for GAIL models (for all layouts)"
+    )
+
+    # Output and logging
+    parser.add_argument(
+        "--results_dir",
+        type=str,
+        default="results/ppo_gail",
+        help="Directory to save results"
+    )
+
+    parser.add_argument(
+        "--use_wandb",
+        action="store_true",
+        help="Use Weights & Biases logging"
+    )
+
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="overcooked-ai",
+        help="WandB project name"
+    )
+
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Reduce output verbosity"
+    )
+
+    # Overrides for testing
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Use reduced settings for local testing (10k steps)"
+    )
+
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Use faster settings (1M steps)"
+    )
+
+    parser.add_argument(
+        "--timesteps",
+        type=int,
+        default=None,
+        help="Override total timesteps"
+    )
+
+    parser.add_argument(
+        "--num_training_iters",
+        type=int,
+        default=None,
+        help="Number of training iterations (overrides layout default)"
+    )
+
+    parser.add_argument(
+        "--use_early_stopping",
+        action="store_true",
+        help="Enable early stopping (disabled by default for paper reproduction)"
+    )
+
     args = parser.parse_args()
-    
-    # Parse seeds
-    seeds = [int(s) for s in args.seeds.split(",")]
+
     verbose = not args.quiet
-    
-    # Paper training iterations per layout
-    PAPER_ITERS = {
-        "cramped_room": 550,
-        "asymmetric_advantages": 650,
-        "coordination_ring": 650,
-        "forced_coordination": 650,
-        "counter_circuit": 650,
-    }
-    
-    # Determine settings
+
+    # Parse seeds
+    seeds = [int(s.strip()) for s in args.seeds.split(",")]
+
+    # Override settings based on flags
+    local_overrides = {}
     if args.local:
-        total_timesteps = 10_000
-        early_stop_patience = 10
-        use_early_stopping = True
+        local_overrides = {
+            "total_timesteps": 10000,
+            "num_workers": 4,
+            "use_early_stopping": True,
+            "early_stop_patience": 10,
+        }
     elif args.fast:
-        total_timesteps = 1_000_000
-        early_stop_patience = args.patience
-        use_early_stopping = True
-    else:
-        # Paper reproduction mode - use full iterations, no early stopping
-        total_timesteps = None  # Will be set per layout
-        early_stop_patience = args.patience
-        use_early_stopping = args.use_early_stopping
-    
-    # Override with explicit args
+        local_overrides = {
+            "total_timesteps": 1000000,
+            "use_early_stopping": True,
+            "early_stop_patience": 100,
+            "save_interval": 25,
+            "log_interval": 1,
+        }
+
     if args.timesteps:
-        total_timesteps = args.timesteps
+        local_overrides["total_timesteps"] = args.timesteps
+
     if args.num_training_iters:
-        total_timesteps = args.num_training_iters * 24000
-    
-    # Extract run_suffix from results_dir (e.g., "run4" from "results/ppo_gail_run4")
-    run_suffix = None
-    if args.results_dir:
-        import re
-        match = re.search(r'_?(run\d+)$', args.results_dir)
-        if match:
-            run_suffix = match.group(1)
-    
-    if args.all_layouts:
-        for layout in LAYOUTS:
-            # Set layout-specific timesteps if not overridden
-            layout_timesteps = total_timesteps
-            if layout_timesteps is None:
-                layout_timesteps = PAPER_ITERS[layout] * 24000
-            
-            # Compute GAIL model directory
-            gail_model_dir = None
-            if args.gail_model_base_dir:
-                gail_model_dir = os.path.join(args.gail_model_base_dir, layout)
-            
-            for seed in seeds:
-                print(f"\n{'='*60}")
-                print(f"Training PPO_GAIL: {layout} seed {seed}")
-                print(f"Timesteps: {layout_timesteps:,}")
-                print(f"Results dir: {args.results_dir}")
-                if run_suffix:
-                    print(f"Run suffix: {run_suffix}")
-                if gail_model_dir:
-                    print(f"GAIL model: {gail_model_dir}")
-                print(f"{'='*60}")
-                
-                train_ppo_gail(
-                    layout=layout,
-                    seed=seed,
-                    total_timesteps=layout_timesteps,
-                    early_stop_patience=early_stop_patience,
-                    gail_model_dir=gail_model_dir,
-                    results_dir=args.results_dir,
-                    run_suffix=run_suffix,
-                    verbose=verbose,
-                )
-    elif args.layout:
-        # Set layout-specific timesteps if not overridden
-        layout_timesteps = total_timesteps
-        if layout_timesteps is None:
-            layout_timesteps = PAPER_ITERS[args.layout] * 24000
-        
-        # Compute GAIL model directory
-        gail_model_dir = None
-        if args.gail_model_base_dir:
+        # Convert iterations to timesteps (30 envs * 400 steps = 12000 per iter)
+        local_overrides["total_timesteps"] = args.num_training_iters * 12000
+
+    if args.use_early_stopping:
+        local_overrides["use_early_stopping"] = True
+
+    if args.layout:
+        # Train single layout
+        gail_model_dir = args.gail_model_dir
+        if gail_model_dir is None and args.gail_model_base_dir:
             gail_model_dir = os.path.join(args.gail_model_base_dir, args.layout)
-        
-        train_ppo_gail(
+
+        results = train_ppo_gail(
             layout=args.layout,
             seed=args.seed,
-            total_timesteps=layout_timesteps,
-            early_stop_patience=early_stop_patience,
             gail_model_dir=gail_model_dir,
             results_dir=args.results_dir,
-            run_suffix=run_suffix,
             verbose=verbose,
+            use_wandb=args.use_wandb,
+            wandb_project=args.wandb_project,
+            optimized=args.optimized,
+            **local_overrides
         )
+        print(f"\nTraining complete. Results: {results}")
+
+    elif args.all_layouts:
+        # Train all layouts
+        results = train_all_layouts(
+            seeds=seeds,
+            layouts=PAPER_LAYOUTS,
+            results_dir=args.results_dir,
+            verbose=verbose,
+            use_wandb=args.use_wandb,
+            wandb_project=args.wandb_project,
+            gail_model_base_dir=args.gail_model_base_dir,
+            optimized=args.optimized,
+        )
+        print_summary(results)
+
     else:
-        print("Please specify --layout or --all_layouts")
         parser.print_help()
+        print("\nError: Must specify --layout or --all_layouts")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
     main()
-

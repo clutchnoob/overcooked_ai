@@ -141,11 +141,60 @@ FIGURE_4B_CONFIGS = {
     "bc_hp": FIGURE_4A_CONFIGS["bc_hp"],
 }
 
+# =============================================================================
+# GAIL Comparison Evaluation Configs
+# =============================================================================
+# These configs compare PPO_GAIL (controlled and optimized) against PPO_BC
+# to isolate the partner model as the experimental variable.
+GAIL_COMPARISON_CONFIGS = {
+    # PPO_BC baseline (same as Figure 4a orange bar)
+    "ppo_bc_hp": FIGURE_4A_CONFIGS["ppo_bc_hp"],
+    # PPO_GAIL_controlled + Human Proxy (fair comparison: Table 3 HPs, GAIL partner)
+    "ppo_gail_hp": {
+        "description": "PPO_GAIL (controlled) + Human Proxy",
+        "display_name": "PPO_GAIL+HProxy",
+        "agent_0_type": "ppo",
+        "agent_1_type": "bc",
+        "agent_0_source": "ppo_gail",
+        "agent_1_source": "hp",
+        "color": "#9467BD",  # Purple
+        "style": "bar",
+    },
+    # PPO_GAIL_optimized + Human Proxy (ablation: Bayesian HPs)
+    "ppo_gail_opt_hp": {
+        "description": "PPO_GAIL (optimized) + Human Proxy",
+        "display_name": "PPO_GAIL_opt+HProxy",
+        "agent_0_type": "ppo",
+        "agent_1_type": "bc",
+        "agent_0_source": "ppo_gail_opt",
+        "agent_1_source": "hp",
+        "color": "#D62728",  # Dark red
+        "style": "bar",
+    },
+    # PPO_SP_optimized + Human Proxy (ablation: isolate HP effect from GAIL)
+    "ppo_sp_opt_hp": {
+        "description": "PPO_SP (optimized) + Human Proxy",
+        "display_name": "PPO_SP_opt+HProxy",
+        "agent_0_type": "ppo",
+        "agent_1_type": "bc",
+        "agent_0_source": "ppo_sp_opt",
+        "agent_1_source": "hp",
+        "color": "#17BECF",  # Cyan
+        "style": "bar",
+    },
+    # Gold standard for reference
+    "ppo_hp_hp": FIGURE_4A_CONFIGS["ppo_hp_hp"],
+    # BC baseline for reference
+    "bc_hp": FIGURE_4A_CONFIGS["bc_hp"],
+}
+
 # Combined configs for full evaluation
 ALL_EVALUATION_CONFIGS = {
     **FIGURE_4A_CONFIGS,
     "pbt_pbt": FIGURE_4B_CONFIGS["pbt_pbt"],
     "pbt_hp": FIGURE_4B_CONFIGS["pbt_hp"],
+    **{k: v for k, v in GAIL_COMPARISON_CONFIGS.items()
+       if k not in FIGURE_4A_CONFIGS and k not in FIGURE_4B_CONFIGS},
 }
 
 
@@ -188,6 +237,9 @@ def evaluate_paper_config(
     ppo_bc_dir: str,
     ppo_hp_dir: str = "results/ppo_hp",
     pbt_dir: str = "results/pbt",
+    ppo_gail_dir: str = "results/ppo_gail",
+    ppo_gail_opt_dir: str = "results/ppo_gail_opt",
+    ppo_sp_opt_dir: str = "results/ppo_sp_opt",
     bc_dir: Optional[str] = None,
     hp_dir: Optional[str] = None,
     num_games: int = 10,
@@ -204,6 +256,9 @@ def evaluate_paper_config(
         ppo_bc_dir: Directory with PPO_BC checkpoints
         ppo_hp_dir: Directory with PPO_HP checkpoints (gold standard)
         pbt_dir: Directory with PBT checkpoints
+        ppo_gail_dir: Directory with PPO_GAIL (controlled) checkpoints
+        ppo_gail_opt_dir: Directory with PPO_GAIL (optimized) checkpoints
+        ppo_sp_opt_dir: Directory with PPO_SP (optimized) checkpoints
         bc_dir: Directory with BC models (default: BC_SAVE_DIR/train)
         hp_dir: Directory with Human Proxy models (default: BC_SAVE_DIR/test)
         num_games: Number of games to play
@@ -252,6 +307,24 @@ def evaluate_paper_config(
             checkpoint = find_checkpoint(pbt_dir, layout, seed)
             if checkpoint is None:
                 raise FileNotFoundError(f"No PBT checkpoint found for {layout}")
+            return load_jax_agent(checkpoint, env_layout, agent_index)
+        
+        elif source == "ppo_gail":
+            checkpoint = find_checkpoint(ppo_gail_dir, layout, seed)
+            if checkpoint is None:
+                raise FileNotFoundError(f"No PPO_GAIL (controlled) checkpoint found for {layout}")
+            return load_jax_agent(checkpoint, env_layout, agent_index)
+        
+        elif source == "ppo_gail_opt":
+            checkpoint = find_checkpoint(ppo_gail_opt_dir, layout, seed)
+            if checkpoint is None:
+                raise FileNotFoundError(f"No PPO_GAIL (optimized) checkpoint found for {layout}")
+            return load_jax_agent(checkpoint, env_layout, agent_index)
+        
+        elif source == "ppo_sp_opt":
+            checkpoint = find_checkpoint(ppo_sp_opt_dir, layout, seed)
+            if checkpoint is None:
+                raise FileNotFoundError(f"No PPO_SP (optimized) checkpoint found for {layout}")
             return load_jax_agent(checkpoint, env_layout, agent_index)
         
         elif source == "bc":
@@ -377,6 +450,77 @@ def evaluate_figure_4b(
     )
 
 
+def evaluate_gail_comparison(
+    ppo_bc_dir: str,
+    ppo_gail_dir: str = "results/ppo_gail",
+    ppo_gail_opt_dir: str = "results/ppo_gail_opt",
+    ppo_sp_opt_dir: str = "results/ppo_sp_opt",
+    ppo_hp_dir: str = "results/ppo_hp",
+    bc_dir: Optional[str] = None,
+    hp_dir: Optional[str] = None,
+    layouts: Optional[List[str]] = None,
+    seeds: Optional[List[int]] = None,
+    num_games: int = 50,
+    verbose: bool = True,
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """
+    Run GAIL comparison evaluations.
+
+    Compares PPO_GAIL_controlled vs PPO_BC (fair comparison using Table 3 HPs),
+    with optional ablations (PPO_GAIL_optimized, PPO_SP_optimized).
+
+    All conditions are evaluated identically: agent paired with Human Proxy model,
+    5 seeds, 50+ games, both agent orders.
+
+    Args:
+        ppo_bc_dir: Directory with PPO_BC checkpoints (baseline)
+        ppo_gail_dir: Directory with PPO_GAIL (controlled) checkpoints
+        ppo_gail_opt_dir: Directory with PPO_GAIL (optimized) checkpoints
+        ppo_sp_opt_dir: Directory with PPO_SP (optimized) checkpoints
+        ppo_hp_dir: Directory with PPO_HP checkpoints (gold standard)
+        bc_dir: Directory with BC models
+        hp_dir: Directory with Human Proxy models
+        layouts: Layouts to evaluate (default: all)
+        seeds: Seeds to average over (default: [0,10,20,30,40])
+        num_games: Number of games per evaluation (default: 50)
+        verbose: Whether to print progress
+
+    Returns:
+        Nested dict: {layout: {config_name: {order: results}}}
+    """
+    if layouts is None:
+        layouts = PAPER_LAYOUTS
+    if seeds is None:
+        seeds = [0, 10, 20, 30, 40]
+
+    configs_to_run = [
+        "ppo_hp_hp",        # Gold standard reference
+        "ppo_bc_hp",        # PPO_BC baseline (Table 3 HPs, BC partner)
+        "ppo_gail_hp",      # PPO_GAIL controlled (Table 3 HPs, GAIL partner)
+        "ppo_gail_opt_hp",  # PPO_GAIL optimized (Bayesian HPs, GAIL partner)
+        "ppo_sp_opt_hp",    # PPO_SP optimized (Bayesian HPs, no partner)
+        "bc_hp",            # BC baseline reference
+    ]
+
+    return _run_evaluations(
+        configs=configs_to_run,
+        ppo_sp_dir="",  # Not directly used
+        ppo_bc_dir=ppo_bc_dir,
+        ppo_hp_dir=ppo_hp_dir,
+        pbt_dir="",  # Not used
+        bc_dir=bc_dir,
+        hp_dir=hp_dir,
+        layouts=layouts,
+        seeds=seeds,
+        num_games=num_games,
+        verbose=verbose,
+        figure_name="GAIL Comparison - Partner Model Ablation",
+        ppo_gail_dir=ppo_gail_dir,
+        ppo_gail_opt_dir=ppo_gail_opt_dir,
+        ppo_sp_opt_dir=ppo_sp_opt_dir,
+    )
+
+
 def _run_evaluations(
     configs: List[str],
     ppo_sp_dir: str,
@@ -390,6 +534,9 @@ def _run_evaluations(
     num_games: int,
     verbose: bool,
     figure_name: str,
+    ppo_gail_dir: str = "results/ppo_gail",
+    ppo_gail_opt_dir: str = "results/ppo_gail_opt",
+    ppo_sp_opt_dir: str = "results/ppo_sp_opt",
 ) -> Dict[str, Dict[str, Dict[str, Any]]]:
     """Internal helper to run evaluations."""
     all_results = {}
@@ -419,6 +566,9 @@ def _run_evaluations(
                             ppo_bc_dir=ppo_bc_dir,
                             ppo_hp_dir=ppo_hp_dir,
                             pbt_dir=pbt_dir,
+                            ppo_gail_dir=ppo_gail_dir,
+                            ppo_gail_opt_dir=ppo_gail_opt_dir,
+                            ppo_sp_opt_dir=ppo_sp_opt_dir,
                             bc_dir=bc_dir,
                             hp_dir=hp_dir,
                             num_games=num_games,
@@ -470,6 +620,9 @@ def evaluate_all_paper_experiments(
     ppo_bc_dir: str = "results/ppo_bc",
     ppo_hp_dir: str = "results/ppo_hp",
     pbt_dir: str = "results/pbt",
+    ppo_gail_dir: str = "results/ppo_gail",
+    ppo_gail_opt_dir: str = "results/ppo_gail_opt",
+    ppo_sp_opt_dir: str = "results/ppo_sp_opt",
     bc_dir: Optional[str] = None,
     hp_dir: Optional[str] = None,
     layouts: Optional[List[str]] = None,
@@ -478,10 +631,10 @@ def evaluate_all_paper_experiments(
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """
-    Run all paper evaluations for both Figure 4(a) and 4(b).
+    Run all paper evaluations for Figure 4(a), 4(b), and GAIL comparison.
     
     Returns:
-        Dictionary with 'figure_4a' and 'figure_4b' results
+        Dictionary with 'figure_4a', 'figure_4b', and 'gail_comparison' results
     """
     results = {}
     
@@ -511,12 +664,29 @@ def evaluate_all_paper_experiments(
         verbose=verbose,
     )
     
+    # GAIL comparison (fair partner-model ablation)
+    results["gail_comparison"] = evaluate_gail_comparison(
+        ppo_bc_dir=ppo_bc_dir,
+        ppo_gail_dir=ppo_gail_dir,
+        ppo_gail_opt_dir=ppo_gail_opt_dir,
+        ppo_sp_opt_dir=ppo_sp_opt_dir,
+        ppo_hp_dir=ppo_hp_dir,
+        bc_dir=bc_dir,
+        hp_dir=hp_dir,
+        layouts=layouts,
+        seeds=seeds,
+        num_games=50,  # 50+ games for conference-grade evaluation
+        verbose=verbose,
+    )
+    
     # Add config metadata for plotting
     results["configs"] = {
         "figure_4a": {k: {kk: vv for kk, vv in v.items() if kk in ["display_name", "color", "style"]}
                       for k, v in FIGURE_4A_CONFIGS.items()},
         "figure_4b": {k: {kk: vv for kk, vv in v.items() if kk in ["display_name", "color", "style"]}
                       for k, v in FIGURE_4B_CONFIGS.items()},
+        "gail_comparison": {k: {kk: vv for kk, vv in v.items() if kk in ["display_name", "color", "style"]}
+                            for k, v in GAIL_COMPARISON_CONFIGS.items()},
     }
     
     return results
@@ -537,6 +707,17 @@ def print_paper_table(results: Dict[str, Any]):
     
     if "figure_4b" in results:
         _print_figure_table(results["figure_4b"], FIGURE_4B_CONFIGS)
+    
+    if "gail_comparison" in results:
+        print("\n" + "="*100)
+        print("GAIL COMPARISON - Partner Model Ablation")
+        print("="*100)
+        print("PPO_BC: Paper Table 3 HPs, BC partner (baseline)")
+        print("PPO_GAIL: Paper Table 3 HPs, GAIL partner (controlled)")
+        print("PPO_GAIL_opt: Bayesian HPs, GAIL partner (optimized ablation)")
+        print("PPO_SP_opt: Bayesian HPs, no partner (HP ablation)")
+        print()
+        _print_figure_table(results["gail_comparison"], GAIL_COMPARISON_CONFIGS)
 
 
 def _print_figure_table(figure_results: Dict, configs: Dict):
@@ -599,6 +780,27 @@ def main():
     )
     
     parser.add_argument(
+        "--ppo_gail_dir",
+        type=str,
+        default="results/ppo_gail",
+        help="Directory with PPO_GAIL (controlled) checkpoints"
+    )
+    
+    parser.add_argument(
+        "--ppo_gail_opt_dir",
+        type=str,
+        default="results/ppo_gail_opt",
+        help="Directory with PPO_GAIL (optimized) checkpoints"
+    )
+    
+    parser.add_argument(
+        "--ppo_sp_opt_dir",
+        type=str,
+        default="results/ppo_sp_opt",
+        help="Directory with PPO_SP (optimized) checkpoints"
+    )
+    
+    parser.add_argument(
         "--bc_dir",
         type=str,
         default=None,
@@ -623,8 +825,8 @@ def main():
         "--figure",
         type=str,
         default="all",
-        choices=["4a", "4b", "all"],
-        help="Which figure to evaluate"
+        choices=["4a", "4b", "gail", "all"],
+        help="Which evaluation to run (4a, 4b, gail, or all)"
     )
     
     parser.add_argument(
@@ -666,6 +868,9 @@ def main():
             ppo_bc_dir=args.ppo_bc_dir,
             ppo_hp_dir=args.ppo_hp_dir,
             pbt_dir=args.pbt_dir,
+            ppo_gail_dir=args.ppo_gail_dir,
+            ppo_gail_opt_dir=args.ppo_gail_opt_dir,
+            ppo_sp_opt_dir=args.ppo_sp_opt_dir,
             bc_dir=args.bc_dir,
             hp_dir=args.hp_dir,
             layouts=layouts,
@@ -687,7 +892,7 @@ def main():
                 verbose=verbose,
             )
         }
-    else:  # 4b
+    elif args.figure == "4b":
         results = {
             "figure_4b": evaluate_figure_4b(
                 ppo_bc_dir=args.ppo_bc_dir,
@@ -698,6 +903,22 @@ def main():
                 layouts=layouts,
                 seeds=seeds,
                 num_games=args.num_games,
+                verbose=verbose,
+            )
+        }
+    elif args.figure == "gail":
+        results = {
+            "gail_comparison": evaluate_gail_comparison(
+                ppo_bc_dir=args.ppo_bc_dir,
+                ppo_gail_dir=args.ppo_gail_dir,
+                ppo_gail_opt_dir=args.ppo_gail_opt_dir,
+                ppo_sp_opt_dir=args.ppo_sp_opt_dir,
+                ppo_hp_dir=args.ppo_hp_dir,
+                bc_dir=args.bc_dir,
+                hp_dir=args.hp_dir,
+                layouts=layouts,
+                seeds=seeds,
+                num_games=args.num_games if args.num_games != 10 else 50,  # Default 50 for GAIL
                 verbose=verbose,
             )
         }

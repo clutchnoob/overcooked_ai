@@ -68,17 +68,18 @@ LAYOUT_TO_ENV = {
 }
 
 
-# Paper hyperparameters for BC (matching Table 3 footnotes)
-PAPER_BC_PARAMS = {
+# Paper hyperparameters for BC (Paper Table 1)
+# Common params shared across all layouts
+PAPER_BC_COMMON = {
     "mlp_params": {
         "num_layers": 2,
         "net_arch": [64, 64],
     },
     "training_params": {
-        "epochs": 100,
         "validation_split": 0.15,
         "batch_size": 64,
-        "learning_rate": 1e-3,
+        "learning_rate": 1e-3,     # Paper Table 1: same for all layouts
+        "adam_epsilon": 1e-8,       # Paper Table 1: explicit for reproducibility
         "use_class_weights": False,
         "patience": 20,
         "lr_patience": 3,
@@ -89,6 +90,15 @@ PAPER_BC_PARAMS = {
         "num_games": 5,
         "display": False,
     },
+}
+
+# Per-layout epoch counts from Paper Table 1
+PAPER_BC_EPOCHS = {
+    "cramped_room": 100,
+    "asymmetric_advantages": 120,
+    "coordination_ring": 120,
+    "forced_coordination": 90,
+    "counter_circuit": 110,
 }
 
 
@@ -134,8 +144,14 @@ def train_bc_for_layout(
         print(f"Data split: {data_split}")
         print(f"Data layout: {data_layout}")
         print(f"Environment layout: {env_layout}")
+        print(f"Epochs: {epochs} (Paper Table 1)")
+        print(f"Learning rate: {PAPER_BC_COMMON['training_params']['learning_rate']}")
+        print(f"Adam epsilon: {PAPER_BC_COMMON['training_params']['adam_epsilon']}")
         print(f"Output directory: {output_dir}")
         print(f"{'='*60}\n")
+    
+    # Get per-layout epoch count from Paper Table 1
+    epochs = PAPER_BC_EPOCHS.get(layout, 100)
     
     # Get BC parameters with paper settings
     bc_params = get_bc_params(
@@ -143,9 +159,10 @@ def train_bc_for_layout(
         data_path=data_path,
         layout_name=env_layout,
         old_dynamics=True,  # Paper uses old dynamics
-        **PAPER_BC_PARAMS["mlp_params"],
-        **PAPER_BC_PARAMS["training_params"],
-        **PAPER_BC_PARAMS["evaluation_params"],
+        epochs=epochs,      # Per-layout from Paper Table 1
+        **PAPER_BC_COMMON["mlp_params"],
+        **PAPER_BC_COMMON["training_params"],
+        **PAPER_BC_COMMON["evaluation_params"],
     )
     
     # Train model
