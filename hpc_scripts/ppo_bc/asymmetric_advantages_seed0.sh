@@ -3,8 +3,8 @@
 #SBATCH --output=../logs/ppo_bc_asymmetric_advantages_seed0_%j.out
 #SBATCH --error=../logs/ppo_bc_asymmetric_advantages_seed0_%j.err
 #SBATCH --time=12:00:00
-#SBATCH --mem=64G
-#SBATCH --cpus-per-task=4
+#SBATCH --mem=48G
+#SBATCH --cpus-per-task=16
 #SBATCH --partition=mit_normal
 
 # PPO with BC Partner Training: asymmetric_advantages (seed=0)

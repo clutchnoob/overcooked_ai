@@ -3,8 +3,8 @@
 #SBATCH --output=../logs/%x_%j.out
 #SBATCH --error=../logs/%x_%j.err
 #SBATCH --time=04:00:00
-#SBATCH --mem=16G
-#SBATCH --cpus-per-task=4
+#SBATCH --mem=48G
+#SBATCH --cpus-per-task=16
 #SBATCH --partition=mit_normal
 
 # Train BC model for coordination_ring layout

@@ -7,6 +7,7 @@ for efficient training with JaxMARL or similar JAX-based RL libraries.
 
 from __future__ import annotations  # Defer type hint evaluation
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple, Callable, TYPE_CHECKING
 import functools
@@ -379,24 +380,21 @@ class VectorizedOvercookedEnv:
         self.obs_shape = self.envs[0].obs_shape
         self.num_actions = self.envs[0].num_actions
         self.num_agents = self.envs[0].num_agents
+        
+        self._executor = ThreadPoolExecutor(max_workers=num_envs)
 
     def reset(self, key: Optional[Any] = None) -> Tuple[Any, Dict[str, np.ndarray]]:
-        """Reset all environments."""
-        states = []
-        obs_0_list = []
-        obs_1_list = []
-        
-        for env in self.envs:
-            state, obs = env.reset()
-            states.append(state)
-            obs_0_list.append(obs["agent_0"])
-            obs_1_list.append(obs["agent_1"])
-        
+        """Reset all environments in parallel."""
+        def _reset(env):
+            return env.reset()
+
+        results = list(self._executor.map(_reset, self.envs))
+
+        states = [r[0] for r in results]
         batched_obs = {
-            "agent_0": jnp.stack(obs_0_list),
-            "agent_1": jnp.stack(obs_1_list),
+            "agent_0": jnp.stack([r[1]["agent_0"] for r in results]),
+            "agent_1": jnp.stack([r[1]["agent_1"] for r in results]),
         }
-        
         return states, batched_obs
 
     def step(
@@ -406,56 +404,49 @@ class VectorizedOvercookedEnv:
         key: Optional[Any] = None
     ) -> Tuple[Any, Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, np.ndarray], Dict[str, Any]]:
         """
-        Step all environments.
-        
+        Step all environments in parallel using a thread pool.
+
         Args:
             states: List of environment states
             actions: Dictionary with batched actions for each agent
             key: Random key (optional)
-            
+
         Returns:
             Tuple of (next_states, observations, rewards, dones, infos)
         """
-        next_states = []
-        obs_0_list = []
-        obs_1_list = []
-        rewards_0_list = []
-        rewards_1_list = []
-        dones_list = []
-        infos_list = []
-        
-        for i, (env, state) in enumerate(zip(self.envs, states)):
-            env_actions = {
-                "agent_0": int(actions["agent_0"][i]),
-                "agent_1": int(actions["agent_1"][i]),
-            }
-            
-            next_state, obs, rewards, dones, info = env.step(state, env_actions)
-            
-            next_states.append(next_state)
-            obs_0_list.append(obs["agent_0"])
-            obs_1_list.append(obs["agent_1"])
-            rewards_0_list.append(rewards["agent_0"])
-            rewards_1_list.append(rewards["agent_1"])
-            dones_list.append(dones["__all__"])
-            infos_list.append(info)
-        
+        acts_0 = actions["agent_0"]
+        acts_1 = actions["agent_1"]
+
+        def _step_one(args):
+            env, state, a0, a1 = args
+            env_actions = {"agent_0": int(a0), "agent_1": int(a1)}
+            return env.step(state, env_actions)
+
+        results = list(self._executor.map(
+            _step_one,
+            zip(self.envs, states, acts_0, acts_1),
+        ))
+
+        next_states = [r[0] for r in results]
+        infos_list = [r[4] for r in results]
+
         batched_obs = {
-            "agent_0": jnp.stack(obs_0_list),
-            "agent_1": jnp.stack(obs_1_list),
+            "agent_0": jnp.stack([r[1]["agent_0"] for r in results]),
+            "agent_1": jnp.stack([r[1]["agent_1"] for r in results]),
         }
-        
+
         batched_rewards = {
-            "agent_0": jnp.array(rewards_0_list),
-            "agent_1": jnp.array(rewards_1_list),
+            "agent_0": jnp.array([r[2]["agent_0"] for r in results]),
+            "agent_1": jnp.array([r[2]["agent_1"] for r in results]),
         }
-        
+
+        dones_list = [r[3]["__all__"] for r in results]
         batched_dones = {
             "agent_0": jnp.array(dones_list),
             "agent_1": jnp.array(dones_list),
             "__all__": jnp.array(dones_list),
         }
-        
+
         return next_states, batched_obs, batched_rewards, batched_dones, infos_list
 
     def anneal_reward_shaping(self, timesteps: int) -> None:

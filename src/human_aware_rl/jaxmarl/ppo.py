@@ -341,6 +341,10 @@ class PPOTrainer:
         
         # Create output directory
         os.makedirs(config.results_dir, exist_ok=True)
+        
+        # Create JIT-compiled functions (after networks are initialized)
+        self._jit_update_step = self._make_jit_update_fn()
+        self._jit_inference = self._make_jit_inference_fn()
 
     def _init_networks(self):
         """Initialize actor-critic networks."""
@@ -495,198 +499,178 @@ class PPOTrainer:
         
         return new_train_state
 
-    def _update(self, train_state, batch):
-        """Perform PPO update with detailed debug metrics."""
-        # Get annealed entropy coefficient
+    def _make_jit_inference_fn(self):
+        """Create a JIT-compiled forward pass for rollout collection."""
+        use_lstm = self.config.use_lstm
+        network = self.network
+
+        @jax.jit
+        def _jit_fwd(params, obs):
+            if use_lstm:
+                return network.apply(params, obs, network.initialize_carry(obs.shape[0]))
+            else:
+                return network.apply(params, obs)
+
+        return _jit_fwd
+
+    def _make_jit_update_fn(self):
+        """Create a JIT-compiled PPO update step.
+
+        Booleans that control tracing branches (use_lstm, clip_vf) are captured
+        via closure so JAX traces the correct branch once and reuses it.
+        """
+        use_lstm = self.config.use_lstm
+        clip_vf = self.config.clip_vf
+        network = self.network
+
+        @jax.jit
+        def _jit_step(train_state, obs, actions, old_log_probs, advantages,
+                       returns, old_values, ent_coef, vf_coef, clip_eps):
+            def loss_fn(params):
+                if use_lstm:
+                    logits, values, _ = train_state.apply_fn(
+                        params, obs, network.initialize_carry(obs.shape[0])
+                    )
+                else:
+                    logits, values = train_state.apply_fn(params, obs)
+
+                log_probs = jax.nn.log_softmax(logits)[jnp.arange(len(actions)), actions]
+                ratio = jnp.exp(log_probs - old_log_probs)
+
+                actor_loss1 = -advantages * ratio
+                actor_loss2 = -advantages * jnp.clip(ratio, 1 - clip_eps, 1 + clip_eps)
+                actor_loss = jnp.maximum(actor_loss1, actor_loss2).mean()
+
+                if clip_vf:
+                    values_clipped = old_values + jnp.clip(
+                        values - old_values, -clip_eps, clip_eps
+                    )
+                    critic_loss = 0.5 * jnp.maximum(
+                        (values - returns) ** 2,
+                        (values_clipped - returns) ** 2,
+                    ).mean()
+                else:
+                    critic_loss = 0.5 * ((values - returns) ** 2).mean()
+
+                probs = jax.nn.softmax(logits)
+                entropy = -(probs * jax.nn.log_softmax(logits)).sum(axis=-1).mean()
+
+                total_loss = actor_loss + vf_coef * critic_loss - ent_coef * entropy
+
+                return total_loss, {
+                    "actor_loss": actor_loss,
+                    "critic_loss": critic_loss,
+                    "entropy": entropy,
+                    "entropy_coef": ent_coef,
+                    "actor_contribution": actor_loss,
+                    "critic_contribution": vf_coef * critic_loss,
+                    "entropy_contribution": -ent_coef * entropy,
+                    "logits_mean": jnp.mean(logits),
+                    "logits_std": jnp.std(logits),
+                    "logits_min": jnp.min(logits),
+                    "logits_max": jnp.max(logits),
+                    "probs_max": jnp.max(probs, axis=-1).mean(),
+                    "probs_min": jnp.min(probs, axis=-1).mean(),
+                    "ratio_mean": jnp.mean(ratio),
+                    "ratio_std": jnp.std(ratio),
+                    "ratio_clipped_frac": jnp.mean(jnp.abs(ratio - 1.0) > clip_eps),
+                    "values_mean": jnp.mean(values),
+                    "values_std": jnp.std(values),
+                    "adv_mean": jnp.mean(advantages),
+                    "adv_std": jnp.std(advantages),
+                    "obs_mean": jnp.mean(obs),
+                    "obs_std": jnp.std(obs),
+                    "obs_max": jnp.max(obs),
+                    "obs_min": jnp.min(obs),
+                    "returns_mean": jnp.mean(returns),
+                    "returns_std": jnp.std(returns),
+                }
+
+            grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+            (loss, metrics), grads = grad_fn(train_state.params)
+
+            leaves = jax.tree_util.tree_leaves(grads)
+            grad_norm = jnp.sqrt(sum(jnp.sum(jnp.square(x)) for x in leaves))
+            metrics["grad_norm"] = grad_norm
+
+            new_train_state = train_state.apply_gradients(grads=grads)
+            return new_train_state, loss, metrics, grads
+
+        return _jit_step
+
+    @staticmethod
+    def _compute_per_layer_grad_norms(grads):
+        """Compute gradient norms per layer (Python-level, not JIT-able)."""
+        layer_norms = {}
+        conv_total = 0.0
+        dense_total = 0.0
+        actor_total = 0.0
+        critic_total = 0.0
+
+        flat_grads = jax.tree_util.tree_leaves_with_path(grads)
+        for path, grad in flat_grads:
+            path_parts = [str(p.key) if hasattr(p, 'key') else str(p) for p in path]
+            name = "/".join(path_parts)
+
+            if 'kernel' in name or 'bias' in name:
+                grad_norm = float(jnp.sqrt(jnp.sum(jnp.square(grad))))
+                grad_mean = float(jnp.mean(jnp.abs(grad)))
+
+                short_name = path_parts[-2] + "/" + path_parts[-1] if len(path_parts) >= 2 else name
+                layer_norms[short_name] = {
+                    'norm': grad_norm,
+                    'mean_abs': grad_mean,
+                    'shape': grad.shape,
+                }
+
+                name_lower = name.lower()
+                if 'conv' in name_lower:
+                    conv_total += grad_norm ** 2
+                elif 'dense_0' in name_lower or 'dense_1' in name_lower or 'dense_2' in name_lower:
+                    dense_total += grad_norm ** 2
+
+                if hasattr(grad, 'shape') and len(grad.shape) >= 1:
+                    if grad.shape[-1] == 6 or 'actor' in name_lower:
+                        actor_total += grad_norm ** 2
+                    elif grad.shape[-1] == 1 or 'critic' in name_lower or 'value' in name_lower:
+                        critic_total += grad_norm ** 2
+
+        return {
+            'per_layer': layer_norms,
+            'conv_norm': float(jnp.sqrt(conv_total)),
+            'dense_norm': float(jnp.sqrt(dense_total)),
+            'actor_head_norm': float(jnp.sqrt(actor_total)),
+            'critic_head_norm': float(jnp.sqrt(critic_total)),
+        }
+
+    def _update(self, train_state, batch, need_debug_grads=False):
+        """Perform PPO update. Core computation is JIT-compiled."""
         ent_coef = self._get_entropy_coef(self.total_timesteps)
         vf_coef = self.config.vf_coef
         clip_eps = self.config.clip_eps
-        use_lstm = self.config.use_lstm
-        clip_vf = self.config.clip_vf
         
-        def loss_fn(params, obs, actions, old_log_probs, advantages, returns, old_values):
-            if use_lstm:
-                logits, values, _ = train_state.apply_fn(
-                    params, obs, self.network.initialize_carry(obs.shape[0])
-                )
-            else:
-                logits, values = train_state.apply_fn(params, obs)
-            
-            # Actor loss with clipping
-            log_probs = jax.nn.log_softmax(logits)[jnp.arange(len(actions)), actions]
-            ratio = jnp.exp(log_probs - old_log_probs)
-            
-            # NOTE: Advantages are normalized per-minibatch before being passed here
-            # (matching original baselines implementation)
-            
-            actor_loss1 = -advantages * ratio
-            actor_loss2 = -advantages * jnp.clip(ratio, 1 - clip_eps, 1 + clip_eps)
-            actor_loss = jnp.maximum(actor_loss1, actor_loss2).mean()
-            
-            # Critic loss with optional value function clipping (like original baselines)
-            if clip_vf:
-                # Clip value predictions to prevent large updates
-                values_clipped = old_values + jnp.clip(
-                    values - old_values, -clip_eps, clip_eps
-                )
-                critic_loss1 = (values - returns) ** 2
-                critic_loss2 = (values_clipped - returns) ** 2
-                critic_loss = 0.5 * jnp.maximum(critic_loss1, critic_loss2).mean()
-            else:
-                critic_loss = 0.5 * ((values - returns) ** 2).mean()
-            
-            # Entropy bonus
-            probs = jax.nn.softmax(logits)
-            entropy = -(probs * jax.nn.log_softmax(logits)).sum(axis=-1).mean()
-            
-            total_loss = actor_loss + vf_coef * critic_loss - ent_coef * entropy
-            
-            # DEBUG: Track loss component contributions (for gradient analysis)
-            actor_contribution = actor_loss
-            critic_contribution = vf_coef * critic_loss
-            entropy_contribution = -ent_coef * entropy  # Negative because we subtract entropy
-            
-            # DEBUG: Compute additional metrics for diagnosis
-            # Logits statistics
-            logits_mean = jnp.mean(logits)
-            logits_std = jnp.std(logits)
-            logits_min = jnp.min(logits)
-            logits_max = jnp.max(logits)
-            
-            # Action probability statistics
-            probs_max = jnp.max(probs, axis=-1).mean()  # Average max probability
-            probs_min = jnp.min(probs, axis=-1).mean()  # Average min probability
-            
-            # Ratio statistics (for clipping diagnosis)
-            ratio_mean = jnp.mean(ratio)
-            ratio_std = jnp.std(ratio)
-            ratio_clipped_frac = jnp.mean(jnp.abs(ratio - 1.0) > clip_eps)
-            
-            # Value statistics
-            values_mean = jnp.mean(values)
-            values_std = jnp.std(values)
-            
-            # Advantage statistics (after normalization)
-            adv_mean = jnp.mean(advantages)
-            adv_std = jnp.std(advantages)
-            
-            return total_loss, {
-                "actor_loss": actor_loss,
-                "critic_loss": critic_loss,
-                "entropy": entropy,
-                "entropy_coef": ent_coef,
-                # Loss component contributions (for gradient flow analysis)
-                "actor_contribution": actor_contribution,
-                "critic_contribution": critic_contribution,
-                "entropy_contribution": entropy_contribution,
-                # DEBUG metrics
-                "logits_mean": logits_mean,
-                "logits_std": logits_std,
-                "logits_min": logits_min,
-                "logits_max": logits_max,
-                "probs_max": probs_max,
-                "probs_min": probs_min,
-                "ratio_mean": ratio_mean,
-                "ratio_std": ratio_std,
-                "ratio_clipped_frac": ratio_clipped_frac,
-                "values_mean": values_mean,
-                "values_std": values_std,
-                "adv_mean": adv_mean,
-                "adv_std": adv_std,
-            }
-        
-        grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
-        
-        obs = batch["obs"]
-        actions = batch["actions"]
-        old_log_probs = batch["log_probs"]
-        advantages = batch["advantages"]
-        returns = batch["returns"]
-        old_values = batch["old_values"]
-        
-        (loss, metrics), grads = grad_fn(
-            train_state.params, obs, actions, old_log_probs, advantages, returns, old_values
+        new_train_state, loss, metrics, grads = self._jit_update_step(
+            train_state,
+            batch["obs"],
+            batch["actions"],
+            batch["log_probs"],
+            batch["advantages"],
+            batch["returns"],
+            batch["old_values"],
+            jnp.float32(ent_coef),
+            jnp.float32(vf_coef),
+            jnp.float32(clip_eps),
         )
-        
-        # DEBUG: Compute gradient statistics
-        def compute_grad_norm(pytree):
-            """Compute global gradient norm."""
-            leaves = jax.tree_util.tree_leaves(pytree)
-            return jnp.sqrt(sum(jnp.sum(jnp.square(x)) for x in leaves))
-        
-        def compute_per_layer_grad_norms(pytree):
-            """Compute gradient norms per layer to identify gradient flow issues."""
-            layer_norms = {}
-            conv_total = 0.0
-            dense_total = 0.0
-            actor_total = 0.0
-            critic_total = 0.0
-            
-            flat_grads = jax.tree_util.tree_leaves_with_path(pytree)
-            for path, grad in flat_grads:
-                # Create a readable name from the path
-                path_parts = [str(p.key) if hasattr(p, 'key') else str(p) for p in path]
-                name = "/".join(path_parts)
-                
-                if 'kernel' in name or 'bias' in name:
-                    grad_norm = float(jnp.sqrt(jnp.sum(jnp.square(grad))))
-                    grad_mean = float(jnp.mean(jnp.abs(grad)))
-                    
-                    # Categorize the layer
-                    short_name = path_parts[-2] + "/" + path_parts[-1] if len(path_parts) >= 2 else name
-                    layer_norms[short_name] = {
-                        'norm': grad_norm,
-                        'mean_abs': grad_mean,
-                        'shape': grad.shape
-                    }
-                    
-                    # Accumulate by category
-                    name_lower = name.lower()
-                    if 'conv' in name_lower:
-                        conv_total += grad_norm ** 2
-                    elif 'dense_0' in name_lower or 'dense_1' in name_lower or 'dense_2' in name_lower:
-                        # Hidden dense layers (not actor/critic heads)
-                        dense_total += grad_norm ** 2
-                    # Check for actor head (last Dense before 6-output or with "actor" in name)
-                    # Actor head typically outputs 6 values (actions)
-                    if hasattr(grad, 'shape') and len(grad.shape) >= 1:
-                        if grad.shape[-1] == 6 or 'actor' in name_lower:
-                            actor_total += grad_norm ** 2
-                        elif grad.shape[-1] == 1 or 'critic' in name_lower or 'value' in name_lower:
-                            critic_total += grad_norm ** 2
-            
-            return {
-                'per_layer': layer_norms,
-                'conv_norm': float(jnp.sqrt(conv_total)),
-                'dense_norm': float(jnp.sqrt(dense_total)),
-                'actor_head_norm': float(jnp.sqrt(actor_total)),
-                'critic_head_norm': float(jnp.sqrt(critic_total))
-            }
-        
-        grad_norm = compute_grad_norm(grads)
-        metrics["grad_norm"] = grad_norm
-        
-        # Compute per-layer gradient norms for debugging
-        layer_grad_info = compute_per_layer_grad_norms(grads)
-        metrics["grad_conv_norm"] = layer_grad_info['conv_norm']
-        metrics["grad_dense_norm"] = layer_grad_info['dense_norm']
-        metrics["grad_actor_head_norm"] = layer_grad_info['actor_head_norm']
-        metrics["grad_critic_head_norm"] = layer_grad_info['critic_head_norm']
-        metrics["grad_per_layer"] = layer_grad_info['per_layer']
-        
-        # Add observation statistics
-        metrics["obs_mean"] = jnp.mean(obs)
-        metrics["obs_std"] = jnp.std(obs)
-        metrics["obs_max"] = jnp.max(obs)
-        metrics["obs_min"] = jnp.min(obs)
-        
-        # Add return statistics
-        metrics["returns_mean"] = jnp.mean(returns)
-        metrics["returns_std"] = jnp.std(returns)
-        
-        train_state = train_state.apply_gradients(grads=grads)
-        
-        return train_state, loss, metrics
+
+        if need_debug_grads:
+            layer_grad_info = self._compute_per_layer_grad_norms(grads)
+            metrics["grad_conv_norm"] = layer_grad_info['conv_norm']
+            metrics["grad_dense_norm"] = layer_grad_info['dense_norm']
+            metrics["grad_actor_head_norm"] = layer_grad_info['actor_head_norm']
+            metrics["grad_critic_head_norm"] = layer_grad_info['critic_head_norm']
+            metrics["grad_per_layer"] = layer_grad_info['per_layer']
+
+        return new_train_state, loss, metrics
 
     def train(self) -> Dict[str, Any]:
         """
@@ -840,14 +824,11 @@ class PPOTrainer:
                     recent_rewards = recent_rewards[-reward_window:]
             
             # Compute advantages
+            last_result = self._jit_inference(self.train_state.params, obs["agent_0"])
             if self.config.use_lstm:
-                _, last_value, _ = self.train_state.apply_fn(
-                    self.train_state.params,
-                    obs["agent_0"],
-                    self.network.initialize_carry(self.config.num_envs)
-                )
+                _, last_value, _ = last_result
             else:
-                _, last_value = self.train_state.apply_fn(self.train_state.params, obs["agent_0"])
+                _, last_value = last_result
             
             advantages, returns = self._compute_gae(transitions, last_value)
             
@@ -889,6 +870,7 @@ class PPOTrainer:
             batch_size = len(batch["obs"])
             minibatch_size = max(1, batch_size // self.config.num_minibatches)
             
+            need_debug = self.config.verbose_debug and update % 5 == 0
             for epoch in range(self.config.num_epochs):
                 self.key, perm_key = random.split(self.key)
                 perm = random.permutation(perm_key, batch_size)
@@ -901,7 +883,9 @@ class PPOTrainer:
                     minibatch_advs = minibatch["advantages"]
                     minibatch["advantages"] = (minibatch_advs - minibatch_advs.mean()) / (minibatch_advs.std() + 1e-8)
                     
-                    self.train_state, loss, metrics = self._update(self.train_state, minibatch)
+                    self.train_state, loss, metrics = self._update(
+                        self.train_state, minibatch, need_debug_grads=need_debug
+                    )
             
             # Compute reward statistics
             mean_reward = np.mean(recent_rewards) if recent_rewards else 0.0
@@ -1214,14 +1198,11 @@ class PPOTrainer:
             # Get actions for agent 0 from policy
             obs_0 = obs["agent_0"]
             
+            result_0 = self._jit_inference(train_state.params, obs_0)
             if self.config.use_lstm:
-                logits, values, _ = train_state.apply_fn(
-                    train_state.params,
-                    obs_0,
-                    self.network.initialize_carry(self.config.num_envs)
-                )
+                logits, values, _ = result_0
             else:
-                logits, values = train_state.apply_fn(train_state.params, obs_0)
+                logits, values = result_0
             
             # Sample actions
             actions_0 = self._select_action(action_key, logits)
@@ -1251,14 +1232,11 @@ class PPOTrainer:
                 self.key, action_key_1 = random.split(self.key)
                 obs_1 = obs["agent_1"]
                 
+                result_1 = self._jit_inference(train_state.params, obs_1)
                 if self.config.use_lstm:
-                    logits_1, _, _ = train_state.apply_fn(
-                        train_state.params,
-                        obs_1,
-                        self.network.initialize_carry(self.config.num_envs)
-                    )
+                    logits_1, _, _ = result_1
                 else:
-                    logits_1, _ = train_state.apply_fn(train_state.params, obs_1)
+                    logits_1, _ = result_1
                 
                 actions_1 = self._select_action(action_key_1, logits_1)
             
@@ -1393,21 +1371,14 @@ class PPOTrainer:
                 obs_0 = jnp.array(obs["agent_0"])[None]  # Add batch dimension
                 obs_1 = jnp.array(obs["agent_1"])[None]
                 
-                # Greedy action selection (argmax) for both agents
+                result_eval_0 = self._jit_inference(self.train_state.params, obs_0)
+                result_eval_1 = self._jit_inference(self.train_state.params, obs_1)
                 if self.config.use_lstm:
-                    logits_0, _, _ = self.train_state.apply_fn(
-                        self.train_state.params,
-                        obs_0,
-                        self.network.initialize_carry(1)
-                    )
-                    logits_1, _, _ = self.train_state.apply_fn(
-                        self.train_state.params,
-                        obs_1,
-                        self.network.initialize_carry(1)
-                    )
+                    logits_0, _, _ = result_eval_0
+                    logits_1, _, _ = result_eval_1
                 else:
-                    logits_0, _ = self.train_state.apply_fn(self.train_state.params, obs_0)
-                    logits_1, _ = self.train_state.apply_fn(self.train_state.params, obs_1)
+                    logits_0, _ = result_eval_0
+                    logits_1, _ = result_eval_1
                 
                 # Use STOCHASTIC sampling during evaluation (matching training behavior)
                 # With high entropy, argmax causes deterministic loops that prevent coordination

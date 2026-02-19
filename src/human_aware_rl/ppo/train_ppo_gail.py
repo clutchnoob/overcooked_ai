@@ -320,7 +320,7 @@ def train_ppo_gail(
         eval_interval=config_dict.get("eval_interval", 25),
         early_stop_patience=config_dict.get("early_stop_patience", 100),
         bc_schedule=bc_schedule_tuples,
-        bc_model_dir=gail_model_dir,  # Used for bookkeeping, actual agent injected below
+        bc_model_dir=None,  # Don't auto-load BC; GAIL agent injected after construction
         verbose=verbose,
         results_dir=results_dir,
         experiment_name=config_dict["experiment_name"],
