@@ -162,11 +162,13 @@ if JAX_AVAILABLE:
         
         @nn.compact
         def __call__(self, x):
-            # Match original TensorFlow initialization:
-            # - tf.layers.conv2d/dense use glorot_uniform by default
-            # - Only policy output uses orthogonal with small scale
+            # Match original TensorFlow baselines initialization:
+            # - tf.layers.conv2d/dense use glorot_uniform by default (backbone)
+            # - Policy output: baselines fc() with ortho_init(scale=0.01)
+            # - Value output: baselines fc() with ortho_init(scale=1.0)
             glorot_init = nn.initializers.glorot_uniform()
-            ortho_init_small = nn.initializers.orthogonal(scale=0.01)  # For policy output only
+            ortho_init_small = nn.initializers.orthogonal(scale=0.01)  # For policy output
+            ortho_init_default = nn.initializers.orthogonal(scale=1.0)  # For value output
             
             # Handle both flat and image observations
             if len(x.shape) == 4:  # Image observation (batch, H, W, C)
@@ -208,10 +210,10 @@ if JAX_AVAILABLE:
                 bias_init=nn.initializers.zeros
             )(x)
             
-            # Critic head with glorot init (matching tf.layers.dense default)
+            # Critic head with orthogonal init (matching baselines fc() default: ortho_init(1.0))
             critic = nn.Dense(
                 1,
-                kernel_init=glorot_init,
+                kernel_init=ortho_init_default,
                 bias_init=nn.initializers.zeros
             )(x)
             
@@ -373,9 +375,12 @@ class PPOTrainer:
             params = self.network.init(subkey, dummy_obs)
         
         # Create optimizer
+        # Use inject_hyperparams so LR can be updated without resetting Adam state
         tx = optax.chain(
             optax.clip_by_global_norm(self.config.max_grad_norm),
-            optax.adam(self.config.learning_rate, eps=1e-5)
+            optax.inject_hyperparams(optax.adam)(
+                learning_rate=self.config.learning_rate, eps=1e-5
+            ),
         )
         
         # Create train state
@@ -478,26 +483,24 @@ class PPOTrainer:
         )
 
     def _update_learning_rate(self, train_state, new_lr: float):
-        """Update the learning rate in the optimizer.
+        """Update the learning rate in the optimizer WITHOUT resetting Adam state.
         
-        This implements linear learning rate annealing from initial LR to 0
-        over the course of training, matching the original baselines implementation.
+        The optimizer was created with optax.inject_hyperparams, so the
+        learning rate lives in opt_state[1].hyperparams['learning_rate'].
+        Modifying it preserves Adam's momentum and second-moment estimates,
+        matching the original TF baselines behavior where LR is a placeholder
+        fed at each training step.
         """
-        # Create new optimizer state with updated learning rate
-        # The optimizer is Adam with the new learning rate
-        new_tx = optax.chain(
-            optax.clip_by_global_norm(self.config.max_grad_norm),
-            optax.adam(new_lr, eps=1e-5),
-        )
-        
-        # Create new train state with updated optimizer
-        new_train_state = TrainState.create(
-            apply_fn=train_state.apply_fn,
-            params=train_state.params,
-            tx=new_tx,
-        )
-        
-        return new_train_state
+        opt_state = train_state.opt_state
+        # opt_state is a tuple: (clip_by_global_norm_state, inject_hyperparams_state)
+        inject_state = opt_state[1]
+        new_hyperparams = {
+            k: (jnp.array(new_lr, dtype=jnp.float32) if k == 'learning_rate' else v)
+            for k, v in inject_state.hyperparams.items()
+        }
+        new_inject_state = inject_state._replace(hyperparams=new_hyperparams)
+        new_opt_state = (opt_state[0], new_inject_state)
+        return train_state.replace(opt_state=new_opt_state)
 
     def _make_jit_inference_fn(self):
         """Create a JIT-compiled forward pass for rollout collection."""
