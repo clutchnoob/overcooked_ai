@@ -138,6 +138,9 @@ def train_bc_for_layout(
     if output_dir is None:
         output_dir = os.path.join(BC_SAVE_DIR, data_split, layout)
     
+    # Get per-layout epoch count from Paper Table 1
+    epochs = PAPER_BC_EPOCHS.get(layout, 100)
+    
     if verbose:
         print(f"\n{'='*60}")
         print(f"Training BC model for layout: {layout}")
@@ -149,9 +152,6 @@ def train_bc_for_layout(
         print(f"Adam epsilon: {PAPER_BC_COMMON['training_params']['adam_epsilon']}")
         print(f"Output directory: {output_dir}")
         print(f"{'='*60}\n")
-    
-    # Get per-layout epoch count from Paper Table 1
-    epochs = PAPER_BC_EPOCHS.get(layout, 100)
     
     # Get BC parameters with paper settings
     bc_params = get_bc_params(

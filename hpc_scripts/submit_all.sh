@@ -4,8 +4,10 @@
 # ============================================================================
 # This script submits all training jobs with proper dependencies:
 # 1. BC models (no dependencies)
-# 2. PPO_SP (no dependencies, runs in parallel with BC)
-# 3. PPO_BC, PPO_GAIL (depend on BC completion)
+# 2. GAIL models (depend on BC - uses BC as KL anchor)
+# 3. PPO_SP (no dependencies, runs in parallel with BC/GAIL)
+# 4. PPO_BC (depends on BC completion)
+# 5. PPO_GAIL (depends on GAIL completion)
 #
 # Usage:
 #   ./submit_all.sh              # Submit all jobs
@@ -148,11 +150,52 @@ submit_ppo_with_partner() {
     echo "PPO_${MODEL_TYPE} jobs submitted: ${COUNT}"
 }
 
+# Function to submit GAIL training jobs (depends on BC)
+submit_gail() {
+    local DEPENDENCY=$1
+    echo "Submitting GAIL training jobs (5 layouts)..."
+    if [ -n "$DEPENDENCY" ]; then
+        echo "  Dependency: afterok:${DEPENDENCY}"
+    fi
+    echo "--------------------------------------------"
+    
+    local DEP_FLAG=""
+    if [ -n "$DEPENDENCY" ]; then
+        DEP_FLAG="--dependency=afterok:${DEPENDENCY}"
+    fi
+    
+    declare -a GAIL_JOB_IDS
+    for layout in cramped_room asymmetric_advantages coordination_ring forced_coordination counter_circuit; do
+        if [ "$DRY_RUN" = true ]; then
+            echo "[DRY RUN] Would submit: gail/${layout}.sh"
+            GAIL_JOB_IDS+=("DRY_RUN_${layout}")
+        else
+            JOB_ID=$(sbatch --parsable \
+                --output="${LOGS_DIR}/gail_${layout}_%j.out" \
+                --error="${LOGS_DIR}/gail_${layout}_%j.err" \
+                $DEP_FLAG "${SCRIPT_DIR}/gail/${layout}.sh")
+            GAIL_JOB_IDS+=("$JOB_ID")
+            echo "  gail_${layout}: Job ${JOB_ID}"
+        fi
+    done
+    
+    echo ""
+    echo "GAIL jobs submitted: ${#GAIL_JOB_IDS[@]}"
+    
+    GAIL_DEPENDENCY=$(IFS=:; echo "${GAIL_JOB_IDS[*]}")
+    export GAIL_DEPENDENCY
+}
+
 # Main submission logic
 TOTAL_JOBS=0
 
 if [ "$PPO_ONLY" = false ]; then
     submit_bc
+    TOTAL_JOBS=$((TOTAL_JOBS + 5))
+    echo ""
+    
+    # GAIL models depend on BC models (KL-regularized GAIL uses BC as anchor)
+    submit_gail "${BC_DEPENDENCY:-}"
     TOTAL_JOBS=$((TOTAL_JOBS + 5))
     echo ""
 fi
@@ -163,17 +206,19 @@ if [ "$BC_ONLY" = false ]; then
     TOTAL_JOBS=$((TOTAL_JOBS + 25))
     echo ""
     
-    # PPO_BC and PPO_GAIL depend on BC
     if [ "$PPO_ONLY" = true ]; then
-        # No dependency if running PPO only (assumes BC done)
+        # No dependency if running PPO only (assumes BC and GAIL done)
         BC_DEPENDENCY=""
+        GAIL_DEPENDENCY=""
     fi
     
+    # PPO_BC depends on BC
     submit_ppo_with_partner "BC" "${BC_DEPENDENCY:-}"
     TOTAL_JOBS=$((TOTAL_JOBS + 25))
     echo ""
     
-    submit_ppo_with_partner "GAIL" "${BC_DEPENDENCY:-}"
+    # PPO_GAIL depends on GAIL (which already depends on BC)
+    submit_ppo_with_partner "GAIL" "${GAIL_DEPENDENCY:-}"
     TOTAL_JOBS=$((TOTAL_JOBS + 25))
     echo ""
 fi
