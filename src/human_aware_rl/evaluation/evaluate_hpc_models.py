@@ -22,7 +22,12 @@ from overcooked_ai_py.mdp.overcooked_env import DEFAULT_ENV_PARAMS
 from human_aware_rl.evaluation import model_utils as mu
 
 
-BASE_MODEL_DIR = "/om/scratch/Mon/mabdel03/6.S890/overcooked_ai/src/human_aware_rl"
+# Auto-detect base directory relative to this file's location
+# Falls back to environment variable or reasonable default
+BASE_MODEL_DIR = os.environ.get(
+    "OVERCOOKED_MODEL_DIR",
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
 PATHS = {
     "bc_train": os.path.join(BASE_MODEL_DIR, "bc_runs", "train"),
@@ -438,6 +443,8 @@ def parse_seeds(raw_seeds: str) -> List[int]:
 
 
 def main():
+    global BASE_MODEL_DIR, PATHS
+    
     parser = argparse.ArgumentParser(description="Evaluate HPC-trained models with Human Proxy")
     parser.add_argument("--num_games", type=int, default=5, help="Games per seed")
     parser.add_argument("--layouts", nargs="*", default=mu.LAYOUTS, help="Layouts to evaluate")
@@ -446,7 +453,21 @@ def main():
     parser.add_argument("--no_gail", action="store_true", help="Skip GAIL baseline evaluation")
     parser.add_argument("--no_ppo_gail", action="store_true", help="Skip PPO_GAIL evaluation")
     parser.add_argument("--quiet", action="store_true", help="Reduce output verbosity")
+    parser.add_argument("--base_dir", type=str, default=None,
+                        help="Base model directory (overrides auto-detected path)")
     args = parser.parse_args()
+
+    # Allow CLI override of base model directory
+    if args.base_dir:
+        BASE_MODEL_DIR = os.path.expanduser(args.base_dir)
+        PATHS = {
+            "bc_train": os.path.join(BASE_MODEL_DIR, "bc_runs", "train"),
+            "bc_test": os.path.join(BASE_MODEL_DIR, "bc_runs", "test"),
+            "gail": os.path.join(BASE_MODEL_DIR, "gail_runs"),
+            "ppo_sp": os.path.join(BASE_MODEL_DIR, "results", "ppo_sp"),
+            "ppo_bc": os.path.join(BASE_MODEL_DIR, "results", "ppo_bc"),
+            "ppo_gail": os.path.join(BASE_MODEL_DIR, "results", "ppo_gail"),
+        }
 
     seeds = parse_seeds(args.seeds)
     verbose = not args.quiet
@@ -454,6 +475,7 @@ def main():
     print("=" * 60)
     print("HPC Model Evaluation")
     print("=" * 60)
+    print(f"Base model dir: {BASE_MODEL_DIR}")
     print(f"Layouts: {args.layouts}")
     print(f"Seeds: {seeds}")
     print(f"Games per seed: {args.num_games}")

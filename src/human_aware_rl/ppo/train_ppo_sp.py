@@ -90,7 +90,7 @@ def train_ppo_sp(
         print(f"Num envs: {config_dict.get('num_workers', 30)}")
         print(f"Learning rate: {config_dict['learning_rate']}")
         print(f"VF coef: {config_dict['vf_coef']}")
-        print(f"Ent coef: {config_dict.get('entropy_coeff_start', 0.01)}")
+        print(f"Ent coef: {config_dict.get('entropy_coeff_start', 0.1)}")
         print(f"Gamma: {config_dict['gamma']}")
         print(f"GAE lambda: {config_dict['gae_lambda']}")
         print(f"Clip epsilon: {config_dict['clip_eps']}")
@@ -113,9 +113,9 @@ def train_ppo_sp(
                 "env_layout": config_dict['layout_name'],
                 "total_timesteps": config_dict['total_timesteps'],
                 "clip_eps": config_dict['clip_eps'],
-                "entropy_coeff_start": config_dict.get('entropy_coeff_start', 0.2),
+                "entropy_coeff_start": config_dict.get('entropy_coeff_start', 0.1),
                 "entropy_coeff_end": config_dict.get('entropy_coeff_end', 0.1),
-                "entropy_coeff_horizon": config_dict.get('entropy_coeff_horizon', 3e5),
+                "entropy_coeff_horizon": config_dict.get('entropy_coeff_horizon', 0),
                 "reward_shaping_horizon": config_dict.get('reward_shaping_horizon', float('inf')),
             },
             "timestamp": int(time_module.time() * 1000),
@@ -159,7 +159,7 @@ def train_ppo_sp(
         gae_lambda=config_dict["gae_lambda"],
         clip_eps=config_dict["clip_eps"],
         vf_coef=config_dict["vf_coef"],
-        ent_coef=config_dict.get("entropy_coeff_start", 0.01),  # ADDED: Pass ent_coef explicitly
+        ent_coef=config_dict.get("entropy_coeff_start", 0.1),  # Original: ENTROPY=0.1
         max_grad_norm=config_dict["max_grad_norm"],
         num_minibatches=config_dict.get("num_minibatches", 6),  # CORRECTED: Was 10
         num_hidden_layers=config_dict.get("num_hidden_layers", 3),
@@ -173,10 +173,10 @@ def train_ppo_sp(
         use_phi=config_dict.get("use_phi", False),
         use_legacy_encoding=config_dict.get("use_legacy_encoding", True),  # ADDED: Use legacy encoding
         old_dynamics=config_dict.get("old_dynamics", True),  # ADDED: Use old dynamics
-        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.01),  # CORRECTED: Was 0.2
-        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.01),      # CORRECTED: Was 0.1
-        entropy_coeff_horizon=config_dict.get("entropy_coeff_horizon", 0),  # CORRECTED: No annealing
-        use_entropy_annealing=config_dict.get("use_entropy_annealing", False),  # CORRECTED: Was True
+        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.1),  # Original: ENTROPY=0.1
+        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.1),      # No annealing
+        entropy_coeff_horizon=config_dict.get("entropy_coeff_horizon", 0), # No annealing
+        use_entropy_annealing=config_dict.get("use_entropy_annealing", False),
         num_epochs=config_dict.get("num_sgd_iter", 8),
         log_interval=config_dict.get("log_interval", 1),
         save_interval=config_dict.get("save_interval", 50),

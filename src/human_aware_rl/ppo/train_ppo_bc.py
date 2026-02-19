@@ -3,7 +3,8 @@ PPO with BC Partner Training Script for Overcooked AI.
 
 This script trains PPO agents with a BC (Behavior Cloning) human model as partner.
 The BC model is trained on human demonstration data, and the PPO agent learns
-to coordinate with it through a BC-schedule that anneals from 100% to 0%.
+to coordinate with it through a self-play schedule that starts at 100% self-play
+and anneals to 100% BC partner (matching the original paper's SELF_PLAY_HORIZON).
 
 Usage:
     # Train all layouts with all seeds
@@ -195,9 +196,9 @@ def train_ppo_bc(
         reward_shaping_factor=config_dict.get("reward_shaping_factor", 1.0),
         reward_shaping_horizon=config_dict.get("reward_shaping_horizon", float('inf')),
         use_phi=config_dict.get("use_phi", False),
-        # Entropy: use values from config (fixed at 0.01 per paper)
-        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.01),
-        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.01),
+        # Entropy: fixed at 0.1 (original: ENTROPY=0.1, never overridden)
+        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.1),
+        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.1),
         entropy_coeff_horizon=config_dict.get("entropy_coeff_horizon", 0),
         use_entropy_annealing=config_dict.get("use_entropy_annealing", False),
         # LR annealing: Paper Table 3 uses factor-based annealing for PPO_BC

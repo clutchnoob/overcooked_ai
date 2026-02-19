@@ -52,10 +52,13 @@ PAPER_COMMON_PARAMS = {
     "num_sgd_iter": 8,
     
     # Entropy coefficient
-    # Original TF baselines use ent_coef=0.01
-    "entropy_coeff_start": 0.01,
-    "entropy_coeff_end": 0.01,
-    "entropy_coeff_horizon": 0,   # No annealing for self-play
+    # Original ppo.py default: ENTROPY = 0.1 (line 101)
+    # No experiment script overrides this, so all layouts use 0.1
+    # Previously incorrectly "corrected" to 0.01 based on baselines default,
+    # but the Overcooked code explicitly sets ENTROPY = 0.1
+    "entropy_coeff_start": 0.1,
+    "entropy_coeff_end": 0.1,
+    "entropy_coeff_horizon": 0,   # No annealing
     "use_entropy_annealing": False,
     
     # Episode settings
@@ -79,95 +82,104 @@ PAPER_COMMON_PARAMS = {
 }
 
 # Entropy coefficient configuration
-# CORRECTED: Original TF baselines default is ent_coef=0.01 (NOT 0.1)
-# Verified from baselines/baselines/ppo2/defaults.py and successful reproduction
+# Original ppo.py sets ENTROPY = 0.1 as the default.
+# No experiment script overrides ENTROPY, so all layouts use 0.1.
+# The baselines default (0.01 for atari) is NOT used -- the Overcooked code
+# explicitly passes ENTROPY=0.1 to the learn() function.
 LAYOUT_ENTROPY_CONFIGS = {
     "cramped_room": {
-        "entropy_coeff_start": 0.01,  # CORRECTED from 0.1
-        "entropy_coeff_end": 0.01,
+        "entropy_coeff_start": 0.1,
+        "entropy_coeff_end": 0.1,
         "entropy_coeff_horizon": 0,
     },
     "asymmetric_advantages": {
-        "entropy_coeff_start": 0.01,  # CORRECTED from 0.1
-        "entropy_coeff_end": 0.01,
+        "entropy_coeff_start": 0.1,
+        "entropy_coeff_end": 0.1,
         "entropy_coeff_horizon": 0,
     },
     "coordination_ring": {
-        "entropy_coeff_start": 0.01,  # CORRECTED from 0.1
-        "entropy_coeff_end": 0.01,
+        "entropy_coeff_start": 0.1,
+        "entropy_coeff_end": 0.1,
         "entropy_coeff_horizon": 0,
     },
     "forced_coordination": {
-        "entropy_coeff_start": 0.01,  # CORRECTED from 0.1
-        "entropy_coeff_end": 0.01,
+        "entropy_coeff_start": 0.1,
+        "entropy_coeff_end": 0.1,
         "entropy_coeff_horizon": 0,
     },
     "counter_circuit": {
-        "entropy_coeff_start": 0.01,  # CORRECTED from 0.1
-        "entropy_coeff_end": 0.01,
+        "entropy_coeff_start": 0.1,
+        "entropy_coeff_end": 0.1,
         "entropy_coeff_horizon": 0,
     },
 }
 
 
-# PPO Self-Play Hyperparameters (per-layout) -- Paper Table 2
+# PPO Self-Play Hyperparameters (per-layout) -- Paper Table 2 + original scripts
 # batch_size = 6 * 2000 = 12,000 (30 envs * 400 steps)
-# num_training_iters = total_timesteps / batch_size = 10M / 12000 = 833
+# Total timesteps and VF_COEF from original ppo_sp_experiments.sh (ground truth)
+# NOTE: Paper Table 2 says VF=0.5 for cramped_room, but the original script
+# actually uses VF_COEF=1. We follow the original code as ground truth.
 PAPER_PPO_SP_CONFIGS: Dict[str, Dict[str, Any]] = {
     "cramped_room": {
-        "learning_rate": 1e-3,          # Paper Table 2
+        "learning_rate": 1e-3,
         "gamma": 0.99,
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.5,                 # Paper Table 2
+        "vf_coef": 1.0,                 # Original script: VF_COEF=1 (paper says 0.5)
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 2.5e6, # Paper Table 2
-        "num_training_iters": 833,       # 833 iters * 12000 batch = ~10M timesteps
+        "reward_shaping_horizon": 2.5e6,
+        "total_timesteps": 6_000_000,    # Original: PPO_RUN_TOT_TIMESTEPS=6e6
+        "num_training_iters": 500,       # 6M / 12000 = 500
     },
     "asymmetric_advantages": {
-        "learning_rate": 1e-3,           # Paper Table 2
+        "learning_rate": 1e-3,
         "gamma": 0.99,
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.5,                 # Paper Table 2
+        "vf_coef": 0.5,
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 2.5e6, # Paper Table 2
-        "num_training_iters": 833,
+        "reward_shaping_horizon": 2.5e6,
+        "total_timesteps": 7_000_000,    # Original: PPO_RUN_TOT_TIMESTEPS=7e6
+        "num_training_iters": 583,       # 7M / 12000 = 583
     },
     "coordination_ring": {
-        "learning_rate": 6e-4,           # Paper Table 2 (lower than others!)
+        "learning_rate": 6e-4,
         "gamma": 0.99,
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.5,                 # Paper Table 2
+        "vf_coef": 0.5,
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 3.5e6, # Paper Table 2 (higher than others!)
-        "num_training_iters": 833,
+        "reward_shaping_horizon": 3.5e6,
+        "total_timesteps": 10_000_000,   # Original: PPO_RUN_TOT_TIMESTEPS=1e7
+        "num_training_iters": 833,       # 10M / 12000 = 833
     },
     "forced_coordination": {
-        "learning_rate": 8e-4,           # Paper Table 2
+        "learning_rate": 8e-4,
         "gamma": 0.99,
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.5,                 # Paper Table 2
+        "vf_coef": 0.5,
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 2.5e6, # Paper Table 2
-        "num_training_iters": 833,
+        "reward_shaping_horizon": 2.5e6,
+        "total_timesteps": 7_500_000,    # Original: PPO_RUN_TOT_TIMESTEPS=7.5e6
+        "num_training_iters": 625,       # 7.5M / 12000 = 625
     },
     "counter_circuit": {
-        "learning_rate": 8e-4,           # Paper Table 2
+        "learning_rate": 8e-4,
         "gamma": 0.99,
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.5,                 # Paper Table 2
+        "vf_coef": 0.5,
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 2.5e6, # Paper Table 2
-        "num_training_iters": 833,
+        "reward_shaping_horizon": 2.5e6,
+        "total_timesteps": 8_000_000,    # Original: PPO_RUN_TOT_TIMESTEPS=8e6
+        "num_training_iters": 667,       # 8M / 12000 = 667
     },
 }
 
@@ -224,9 +236,9 @@ PBT_COMMON_PARAMS = {
 
 
 # PPO_BC / PPO_HP configurations (PPO trained with BC or Human Proxy partner)
-# Paper Table 3: These have DISTINCT hyperparameters from PPO_SP!
-# Key differences: per-layout LR, LR annealing factor, VF coef, reward shaping
-# horizon, self-play annealing schedule, num_minibatches, and batch size.
+# Paper Table 3 + total_timesteps from original ppo_bc_experiments.sh
+# Key differences from SP: per-layout LR, LR annealing factor, VF coef, reward
+# shaping horizon, self-play annealing schedule, num_minibatches.
 #
 # Batch size: num_minibatches * minibatch_size = 12,000 for all layouts
 # This implies 30 parallel environments (30 envs * 400 steps = 12,000)
@@ -240,13 +252,16 @@ PAPER_PPO_BC_CONFIGS: Dict[str, Dict[str, Any]] = {
         "gae_lambda": 0.98,
         "vf_coef": 0.5,
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 1e6,  # Paper Table 3
-        "num_minibatches": 10,          # Paper Table 3 (minibatch_size=1200)
-        # Self-play annealing [5e5, 3e6]: BC at 100% until 5e5, anneals to 0% by 3e6
+        "reward_shaping_horizon": 1e6,
+        "num_minibatches": 10,          # minibatch_size=1200
+        "total_timesteps": 8_000_000,   # Original: PPO_RUN_TOT_TIMESTEPS=8e6
+        # SELF_PLAY_HORIZON=[5e5, 3e6]:
+        # Original: self_play_randomization starts at 1.0 (100% self-play), anneals to 0 (100% BC)
+        # bc_factor = 1 - self_play_randomization: starts 0.0 (self-play), ends 1.0 (BC)
         "bc_schedule": [
-            (0, 1.0),
-            (5e5, 1.0),
-            (3e6, 0.0),
+            (0, 0.0),       # 0% BC (100% self-play)
+            (5e5, 0.0),     # Still 100% self-play
+            (3e6, 1.0),     # Fully transitioned to 100% BC
         ],
     },
     "asymmetric_advantages": {
@@ -258,13 +273,15 @@ PAPER_PPO_BC_CONFIGS: Dict[str, Dict[str, Any]] = {
         "gae_lambda": 0.98,
         "vf_coef": 0.5,
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 6e6,  # Paper Table 3
-        "num_minibatches": 12,          # Paper Table 3 (minibatch_size=1000)
-        # Self-play annealing [1e6, 7e6]: BC at 100% until 1e6, anneals to 0% by 7e6
+        "reward_shaping_horizon": 6e6,
+        "num_minibatches": 12,          # minibatch_size=1000
+        "total_timesteps": 10_000_000,  # Original: PPO_RUN_TOT_TIMESTEPS=1e7
+        # SELF_PLAY_HORIZON=[1e6, 7e6]:
+        # self-play first, then transition to BC
         "bc_schedule": [
-            (0, 1.0),
-            (1e6, 1.0),
-            (7e6, 0.0),
+            (0, 0.0),       # 0% BC (100% self-play)
+            (1e6, 0.0),     # Still 100% self-play
+            (7e6, 1.0),     # Fully transitioned to 100% BC
         ],
     },
     "coordination_ring": {
@@ -276,13 +293,15 @@ PAPER_PPO_BC_CONFIGS: Dict[str, Dict[str, Any]] = {
         "gae_lambda": 0.98,
         "vf_coef": 0.5,
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 5e6,  # Paper Table 3
-        "num_minibatches": 15,          # Paper Table 3 (minibatch_size=800)
-        # Self-play annealing [2e6, 6e6]: BC at 100% until 2e6, anneals to 0% by 6e6
+        "reward_shaping_horizon": 5e6,
+        "num_minibatches": 15,          # minibatch_size=800
+        "total_timesteps": 16_000_000,  # Original: PPO_RUN_TOT_TIMESTEPS=1.6e7
+        # SELF_PLAY_HORIZON=[2e6, 6e6]:
+        # self-play first, then transition to BC
         "bc_schedule": [
-            (0, 1.0),
-            (2e6, 1.0),
-            (6e6, 0.0),
+            (0, 0.0),       # 0% BC (100% self-play)
+            (2e6, 0.0),     # Still 100% self-play
+            (6e6, 1.0),     # Fully transitioned to 100% BC
         ],
     },
     "forced_coordination": {
@@ -292,11 +311,12 @@ PAPER_PPO_BC_CONFIGS: Dict[str, Dict[str, Any]] = {
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.1,                 # Paper Table 3 (NOT 0.5!)
+        "vf_coef": 0.1,                 # NOT 0.5!
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 4e6,  # Paper Table 3
-        "num_minibatches": 15,          # Paper Table 3 (minibatch_size=800)
-        # Self-play annealing: N/A -- BC partner stays at 100% throughout training
+        "reward_shaping_horizon": 4e6,
+        "num_minibatches": 15,          # minibatch_size=800
+        "total_timesteps": 9_000_000,   # Original: PPO_RUN_TOT_TIMESTEPS=9e6
+        # SELF_PLAY_HORIZON=None: self_play_randomization=0 → always BC
         "bc_schedule": [
             (0, 1.0),
             (float('inf'), 1.0),
@@ -309,15 +329,17 @@ PAPER_PPO_BC_CONFIGS: Dict[str, Dict[str, Any]] = {
         "clip_eps": 0.05,
         "max_grad_norm": 0.1,
         "gae_lambda": 0.98,
-        "vf_coef": 0.1,                 # Paper Table 3 (NOT 0.5!)
+        "vf_coef": 0.1,                 # NOT 0.5!
         "kl_coeff": 0.2,
-        "reward_shaping_horizon": 4e6,  # Paper Table 3
-        "num_minibatches": 15,          # Paper Table 3 (minibatch_size=800)
-        # Self-play annealing [1e6, 4e6]: BC at 100% until 1e6, anneals to 0% by 4e6
+        "reward_shaping_horizon": 4e6,
+        "num_minibatches": 15,          # minibatch_size=800
+        "total_timesteps": 12_000_000,  # Original: PPO_RUN_TOT_TIMESTEPS=1.2e7
+        # SELF_PLAY_HORIZON=[1e6, 4e6]:
+        # self-play first, then transition to BC
         "bc_schedule": [
-            (0, 1.0),
-            (1e6, 1.0),
-            (4e6, 0.0),
+            (0, 0.0),       # 0% BC (100% self-play)
+            (1e6, 0.0),     # Still 100% self-play
+            (4e6, 1.0),     # Fully transitioned to 100% BC
         ],
     },
 }
@@ -366,8 +388,10 @@ def get_ppo_sp_config(layout: str, seed: int = 0, **overrides) -> Dict[str, Any]
         # Disable entropy annealing since it's fixed (Table 2)
         config["use_entropy_annealing"] = False
     
-    # Total timesteps: 833 iters * 12000 batch_size = ~10M timesteps
-    config["total_timesteps"] = 10_000_000  # 10M timesteps
+    # Total timesteps: use per-layout value from original scripts
+    # (already set in PAPER_PPO_SP_CONFIGS via "total_timesteps" key)
+    if "total_timesteps" not in config:
+        config["total_timesteps"] = 10_000_000  # Fallback
     
     config.update(overrides)
     return config
@@ -436,7 +460,7 @@ def get_ppo_bc_config(layout: str, seed: int = 0, bc_model_dir: str = None, **ov
         "use_lr_annealing": True,
     }
     
-    # Apply layout-specific entropy config (same as SP: fixed at 0.01)
+    # Apply layout-specific entropy config (same as SP: fixed at 0.1)
     if layout in LAYOUT_ENTROPY_CONFIGS:
         entropy_config = LAYOUT_ENTROPY_CONFIGS[layout]
         config["entropy_coeff_start"] = entropy_config["entropy_coeff_start"]
@@ -444,8 +468,10 @@ def get_ppo_bc_config(layout: str, seed: int = 0, bc_model_dir: str = None, **ov
         config["entropy_coeff_horizon"] = entropy_config["entropy_coeff_horizon"]
         config["use_entropy_annealing"] = False
     
-    # Total timesteps: 10M (same budget as SP)
-    config["total_timesteps"] = 10_000_000
+    # Total timesteps: use per-layout value from original scripts
+    # (already set in PAPER_PPO_BC_CONFIGS via "total_timesteps" key)
+    if "total_timesteps" not in config:
+        config["total_timesteps"] = 10_000_000  # Fallback
     
     config.update(overrides)
     return config
@@ -496,7 +522,7 @@ def get_ppo_gail_config(layout: str, seed: int = 0, gail_model_dir: str = None,
         "use_lr_annealing": True,
     }
 
-    # Entropy: fixed at 0.01, same as SP and BC
+    # Entropy: fixed at 0.1, same as SP and BC
     if layout in LAYOUT_ENTROPY_CONFIGS:
         entropy_config = LAYOUT_ENTROPY_CONFIGS[layout]
         config["entropy_coeff_start"] = entropy_config["entropy_coeff_start"]
@@ -504,7 +530,9 @@ def get_ppo_gail_config(layout: str, seed: int = 0, gail_model_dir: str = None,
         config["entropy_coeff_horizon"] = entropy_config["entropy_coeff_horizon"]
         config["use_entropy_annealing"] = False
 
-    config["total_timesteps"] = 10_000_000
+    # GAIL controlled uses same total_timesteps as PPO_BC (per-layout from original scripts)
+    if "total_timesteps" not in config:
+        config["total_timesteps"] = 10_000_000  # Fallback
 
     config.update(overrides)
     return config

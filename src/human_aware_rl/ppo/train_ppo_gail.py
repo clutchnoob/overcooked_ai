@@ -246,8 +246,8 @@ def train_ppo_gail(
         print(f"Num minibatches: {config_dict.get('num_minibatches', 6)}")
         num_envs = config_dict.get('num_workers', 30)
         print(f"Num envs: {num_envs} (batch={num_envs * 400:,})")
-        print(f"Entropy: start={config_dict.get('entropy_coeff_start', 0.01)}, "
-              f"end={config_dict.get('entropy_coeff_end', 0.01)}, "
+        print(f"Entropy: start={config_dict.get('entropy_coeff_start', 0.1)}, "
+              f"end={config_dict.get('entropy_coeff_end', 0.1)}, "
               f"annealing={config_dict.get('use_entropy_annealing', False)}")
         print(f"BC schedule: {config_dict['bc_schedule']}")
         print(f"Results dir: {results_dir}")
@@ -306,9 +306,9 @@ def train_ppo_gail(
         reward_shaping_factor=config_dict.get("reward_shaping_factor", 1.0),
         reward_shaping_horizon=config_dict.get("reward_shaping_horizon", float('inf')),
         use_phi=config_dict.get("use_phi", False),
-        # Entropy
-        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.01),
-        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.01),
+        # Entropy: fixed at 0.1 for controlled (original default)
+        entropy_coeff_start=config_dict.get("entropy_coeff_start", 0.1),
+        entropy_coeff_end=config_dict.get("entropy_coeff_end", 0.1),
         entropy_coeff_horizon=config_dict.get("entropy_coeff_horizon", 0),
         use_entropy_annealing=config_dict.get("use_entropy_annealing", False),
         # LR annealing

@@ -27,11 +27,15 @@ LAYOUTS = [
 ]
 
 LAYOUT_TO_ENV = {
-    "cramped_room": "cramped_room",
-    "asymmetric_advantages": "asymmetric_advantages",
-    "coordination_ring": "coordination_ring",
-    "forced_coordination": "forced_coordination",
-    "counter_circuit": "counter_circuit_o_1order",
+    # CRITICAL: Must use legacy layout names to match training environments.
+    # Legacy layouts have cook_time=20, num_items_for_soup=3, delivery_reward=20
+    # baked into the layout file. Non-legacy names lack these, causing MDP
+    # parameter mismatches between training and evaluation.
+    "cramped_room": "cramped_room_legacy",
+    "asymmetric_advantages": "asymmetric_advantages_legacy",
+    "coordination_ring": "coordination_ring_legacy",
+    "forced_coordination": "random0_legacy",
+    "counter_circuit": "random3_legacy",
 }
 
 SEEDS = [0, 10, 20, 30, 40]
@@ -167,8 +171,13 @@ class PPOAgentWrapper(Agent):
         bias = self.p[layer_name]["bias"]
         return jnp.dot(x, kernel) + bias
 
-    def _leaky_relu(self, x, alpha: float = 0.01):
-        """Leaky ReLU activation."""
+    def _leaky_relu(self, x, alpha: float = 0.2):
+        """Leaky ReLU activation.
+        
+        CRITICAL: alpha must match training. The original TF code uses
+        tf.nn.leaky_relu which defaults to alpha=0.2, and the JAX training
+        code uses nn.leaky_relu(x, negative_slope=0.2).
+        """
         import jax.numpy as jnp
 
         return jnp.where(x > 0, x, alpha * x)
