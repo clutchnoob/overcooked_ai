@@ -263,7 +263,7 @@ class GAILTrainer:
             
             for t in range(len(states)):
                 expert_states.append(states[t].flatten())
-                expert_actions.append(int(actions[t]))
+                expert_actions.append(int(actions[t].item()))
         
         self.expert_states = torch.tensor(np.array(expert_states), dtype=torch.float32, device=self.device)
         self.expert_actions = torch.tensor(expert_actions, dtype=torch.long, device=self.device)
