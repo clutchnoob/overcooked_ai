@@ -3,8 +3,8 @@
 #SBATCH --output=../logs/%x_%j.out
 #SBATCH --error=../logs/%x_%j.err
 #SBATCH --time=08:00:00
-#SBATCH --mem=48G
-#SBATCH --cpus-per-task=16
+#SBATCH --mem=32G
+#SBATCH --cpus-per-task=8
 #SBATCH --partition=mit_normal
 
 # Train GAIL model for counter_circuit layout

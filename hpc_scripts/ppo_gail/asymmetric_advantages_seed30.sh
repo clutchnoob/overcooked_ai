@@ -3,8 +3,8 @@
 #SBATCH --output=../logs/ppo_gail_asymmetric_advantages_seed30_%j.out
 #SBATCH --error=../logs/ppo_gail_asymmetric_advantages_seed30_%j.err
 #SBATCH --time=12:00:00
-#SBATCH --mem=48G
-#SBATCH --cpus-per-task=16
+#SBATCH --mem=32G
+#SBATCH --cpus-per-task=8
 #SBATCH --partition=mit_normal
 
 # PPO with GAIL Partner Training: asymmetric_advantages (seed=30)

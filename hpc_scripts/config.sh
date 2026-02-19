@@ -54,8 +54,8 @@ SEEDS=(0 10 20 30 40)
 # glibc 2.17 which is too old for JAX/PyTorch dependencies.
 export SLURM_PARTITION="mit_normal"
 export SLURM_TIME="12:00:00"
-export SLURM_MEM="48G"
-export SLURM_CPUS="16"
+export SLURM_MEM="32G"
+export SLURM_CPUS="8"
 
 # Thread parallelism — ensure JAX/numpy/XLA use all allocated CPUs
 export OMP_NUM_THREADS="${SLURM_CPUS}"

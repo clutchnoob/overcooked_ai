@@ -3,8 +3,8 @@
 #SBATCH --output=../logs/ppo_sp_counter_circuit_seed40_%j.out
 #SBATCH --error=../logs/ppo_sp_counter_circuit_seed40_%j.err
 #SBATCH --time=12:00:00
-#SBATCH --mem=48G
-#SBATCH --cpus-per-task=16
+#SBATCH --mem=32G
+#SBATCH --cpus-per-task=8
 #SBATCH --partition=mit_normal
 
 # PPO Self-Play Training: counter_circuit (seed=40)
