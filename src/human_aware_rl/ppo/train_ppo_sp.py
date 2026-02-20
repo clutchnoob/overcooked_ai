@@ -401,6 +401,18 @@ def main():
         help="Enable early stopping (disabled by default for paper reproduction)"
     )
     parser.add_argument(
+        "--vf_coef",
+        type=float,
+        default=None,
+        help="Override value function loss coefficient (e.g., 1.0, 0.5, 0.25)"
+    )
+    parser.add_argument(
+        "--max_grad_norm",
+        type=float,
+        default=None,
+        help="Override global gradient clipping threshold (e.g., 0.1, 0.3)"
+    )
+    parser.add_argument(
         "--verbose_debug",
         action="store_true",
         help="Enable detailed PPO debug diagnostics"
@@ -445,6 +457,10 @@ def main():
     
     if args.use_early_stopping:
         local_overrides["use_early_stopping"] = True
+    if args.vf_coef is not None:
+        local_overrides["vf_coef"] = args.vf_coef
+    if args.max_grad_norm is not None:
+        local_overrides["max_grad_norm"] = args.max_grad_norm
     if args.verbose_debug:
         local_overrides["verbose_debug"] = True
     if args.grad_diagnostics:
