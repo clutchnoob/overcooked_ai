@@ -113,6 +113,7 @@ class PPOConfig:
     eval_num_games: int = 5
     verbose: bool = True
     verbose_debug: bool = False  # Enable detailed per-update diagnostics
+    grad_diagnostics: bool = False  # Compute per-loss-term grad norms (expensive)
     
     # Early stopping (disabled by default for paper reproduction)
     use_early_stopping: bool = False  # Set True only for fast/debug mode
@@ -526,10 +527,25 @@ class PPOTrainer:
         clip_vf = self.config.clip_vf
         network = self.network
 
+        max_grad_norm = self.config.max_grad_norm
+        grad_diagnostics = self.config.grad_diagnostics
+
         @jax.jit
         def _jit_step(train_state, obs, actions, old_log_probs, advantages,
                        returns, old_values, ent_coef, vf_coef, clip_eps):
-            def loss_fn(params):
+            # Explicitly detach rollout/target tensors from autograd.
+            # These are fixed minibatch inputs, matching TF placeholder semantics.
+            obs = jnp.asarray(obs, dtype=jnp.float32)
+            actions = jnp.asarray(actions, dtype=jnp.int32)
+            old_log_probs = jax.lax.stop_gradient(jnp.asarray(old_log_probs, dtype=jnp.float32))
+            advantages = jax.lax.stop_gradient(jnp.asarray(advantages, dtype=jnp.float32))
+            returns = jax.lax.stop_gradient(jnp.asarray(returns, dtype=jnp.float32))
+            old_values = jax.lax.stop_gradient(jnp.asarray(old_values, dtype=jnp.float32))
+            ent_coef = jnp.asarray(ent_coef, dtype=jnp.float32)
+            vf_coef = jnp.asarray(vf_coef, dtype=jnp.float32)
+            clip_eps = jnp.asarray(clip_eps, dtype=jnp.float32)
+
+            def _compute_loss_terms(params):
                 if use_lstm:
                     logits, values, _ = train_state.apply_fn(
                         params, obs, network.initialize_carry(obs.shape[0])
@@ -559,6 +575,10 @@ class PPOTrainer:
                 entropy = -(probs * jax.nn.log_softmax(logits)).sum(axis=-1).mean()
 
                 total_loss = actor_loss + vf_coef * critic_loss - ent_coef * entropy
+                return total_loss, actor_loss, critic_loss, entropy, logits, values, probs, ratio
+
+            def loss_fn(params):
+                total_loss, actor_loss, critic_loss, entropy, logits, values, probs, ratio = _compute_loss_terms(params)
 
                 return total_loss, {
                     "actor_loss": actor_loss,
@@ -593,8 +613,46 @@ class PPOTrainer:
             (loss, metrics), grads = grad_fn(train_state.params)
 
             leaves = jax.tree_util.tree_leaves(grads)
-            grad_norm = jnp.sqrt(sum(jnp.sum(jnp.square(x)) for x in leaves))
-            metrics["grad_norm"] = grad_norm
+            grad_norm_preclip = jnp.sqrt(sum(jnp.sum(jnp.square(x)) for x in leaves))
+            clip_scale = jnp.minimum(1.0, max_grad_norm / (grad_norm_preclip + 1e-8))
+            grad_norm_postclip_est = grad_norm_preclip * clip_scale
+            metrics["grad_norm"] = grad_norm_preclip
+            metrics["grad_norm_preclip"] = grad_norm_preclip
+            metrics["grad_clip_scale"] = clip_scale
+            metrics["grad_norm_postclip_est"] = grad_norm_postclip_est
+            metrics["global_clip_threshold"] = jnp.asarray(max_grad_norm, dtype=jnp.float32)
+
+            if grad_diagnostics:
+                def actor_term(params):
+                    _, actor_loss, _, _, _, _, _, _ = _compute_loss_terms(params)
+                    return actor_loss
+
+                def critic_term(params):
+                    _, _, critic_loss, _, _, _, _, _ = _compute_loss_terms(params)
+                    return vf_coef * critic_loss
+
+                def entropy_term(params):
+                    _, _, _, entropy, _, _, _, _ = _compute_loss_terms(params)
+                    return -ent_coef * entropy
+
+                actor_grads = jax.grad(actor_term)(train_state.params)
+                critic_grads = jax.grad(critic_term)(train_state.params)
+                entropy_grads = jax.grad(entropy_term)(train_state.params)
+
+                def tree_l2_norm(tree):
+                    lvs = jax.tree_util.tree_leaves(tree)
+                    return jnp.sqrt(sum(jnp.sum(jnp.square(x)) for x in lvs))
+
+                actor_norm = tree_l2_norm(actor_grads)
+                critic_norm = tree_l2_norm(critic_grads)
+                entropy_norm = tree_l2_norm(entropy_grads)
+
+                metrics["grad_actor_term_norm"] = actor_norm
+                metrics["grad_critic_term_norm"] = critic_norm
+                metrics["grad_entropy_term_norm"] = entropy_norm
+                metrics["grad_actor_term_postclip_est"] = actor_norm * clip_scale
+                metrics["grad_critic_term_postclip_est"] = critic_norm * clip_scale
+                metrics["grad_entropy_term_postclip_est"] = entropy_norm * clip_scale
 
             new_train_state = train_state.apply_gradients(grads=grads)
             return new_train_state, loss, metrics, grads
@@ -797,6 +855,7 @@ class PPOTrainer:
             print(f"  VF Coef: {self.config.vf_coef}")
             print(f"  Max Grad Norm: {self.config.max_grad_norm}")
             print(f"  Clip VF: {self.config.clip_vf}")
+            print(f"  Grad Diagnostics: {self.config.grad_diagnostics}")
             
             # Network architecture
             print(f"\n[NETWORK ARCHITECTURE]")
@@ -996,11 +1055,31 @@ class PPOTrainer:
                     # Gradient diagnostics
                     grad_norm = float(metrics.get("grad_norm", 0))
                     print(f"\n[GRADIENTS - GLOBAL]")
-                    print(f"  Global Grad Norm: {grad_norm:.6f}")
+                    grad_norm_preclip = float(metrics.get("grad_norm_preclip", grad_norm))
+                    grad_norm_postclip_est = float(metrics.get("grad_norm_postclip_est", grad_norm))
+                    grad_clip_scale = float(metrics.get("grad_clip_scale", 1.0))
+                    global_clip_threshold = float(metrics.get("global_clip_threshold", self.config.max_grad_norm))
+                    print(f"  Global Grad Norm (pre-clip):  {grad_norm_preclip:.6f}")
+                    print(f"  Clip Threshold:               {global_clip_threshold:.6f}")
+                    print(f"  Clip Scale Factor:            {grad_clip_scale:.6f}")
+                    print(f"  Global Grad Norm (post est):  {grad_norm_postclip_est:.6f}")
                     if grad_norm < 1e-6:
                         print(f"  ⚠️  WARNING: Gradient norm is extremely small! Policy may not be learning.")
                     elif grad_norm > 10:
                         print(f"  ⚠️  WARNING: Gradient norm is very large! May cause instability.")
+
+                    if self.config.grad_diagnostics:
+                        actor_term_norm = float(metrics.get("grad_actor_term_norm", 0.0))
+                        critic_term_norm = float(metrics.get("grad_critic_term_norm", 0.0))
+                        entropy_term_norm = float(metrics.get("grad_entropy_term_norm", 0.0))
+                        actor_term_post = float(metrics.get("grad_actor_term_postclip_est", 0.0))
+                        critic_term_post = float(metrics.get("grad_critic_term_postclip_est", 0.0))
+                        entropy_term_post = float(metrics.get("grad_entropy_term_postclip_est", 0.0))
+
+                        print(f"\n[GRADIENTS - PER LOSS TERM]")
+                        print(f"  Actor Term Norm:   {actor_term_norm:.6f} (post est: {actor_term_post:.6f})")
+                        print(f"  Critic Term Norm:  {critic_term_norm:.6f} (post est: {critic_term_post:.6f})")
+                        print(f"  Entropy Term Norm: {entropy_term_norm:.6f} (post est: {entropy_term_post:.6f})")
                     
                     # Per-layer gradient diagnostics (CRITICAL for debugging)
                     conv_grad_norm = float(metrics.get("grad_conv_norm", 0))

@@ -184,6 +184,8 @@ def train_ppo_sp(
         eval_num_games=config_dict.get("evaluation_num_games", 5),  # ADDED
         early_stop_patience=config_dict.get("early_stop_patience", 100),
         use_early_stopping=config_dict.get("use_early_stopping", False),  # ADDED: Default off for paper repro
+        verbose_debug=config_dict.get("verbose_debug", False),
+        grad_diagnostics=config_dict.get("grad_diagnostics", False),
         verbose=verbose,
         results_dir=results_dir,
         experiment_name=config_dict["experiment_name"],
@@ -398,6 +400,16 @@ def main():
         action="store_true",
         help="Enable early stopping (disabled by default for paper reproduction)"
     )
+    parser.add_argument(
+        "--verbose_debug",
+        action="store_true",
+        help="Enable detailed PPO debug diagnostics"
+    )
+    parser.add_argument(
+        "--grad_diagnostics",
+        action="store_true",
+        help="Enable expensive per-loss-term gradient diagnostics"
+    )
     
     args = parser.parse_args()
     
@@ -433,6 +445,10 @@ def main():
     
     if args.use_early_stopping:
         local_overrides["use_early_stopping"] = True
+    if args.verbose_debug:
+        local_overrides["verbose_debug"] = True
+    if args.grad_diagnostics:
+        local_overrides["grad_diagnostics"] = True
     
     if args.layout:
         # Train single layout
